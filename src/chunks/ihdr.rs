@@ -10,7 +10,7 @@ pub enum ColorType {
     RGBA,
 }
 
-#[derive(Debug)]
+#[derive(Debug, PartialEq, Eq)]
 pub enum InterlaceMethod {
     NoInterlace,
     Adam7,
@@ -98,6 +98,10 @@ impl IHDRChunk {
         // Two values are currently defined: 0 (no interlace) or 1 (Adam7 interlace)
         if ihdr.interlace_method >= 2 {
             panic!("Unknown interlace_method: {}", ihdr.interlace_method);
+        }
+
+        if ihdr.interlace_method() == InterlaceMethod::Adam7 {
+            panic!("Interlacing not supported for now");
         }
 
         ihdr
