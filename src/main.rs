@@ -37,7 +37,7 @@ fn main() -> io::Result<()> {
     let mut zlib_stream: Vec<u8> = Vec::new();
 
     loop {
-        let chunk_length = from_bytes(&buffer[i..i + 4]) as usize;
+        let chunk_length = from_bytes_u32(&buffer[i..i + 4]) as usize;
         i += 4;
         let chunk_type = &buffer[i..i + 4];
         i += 4;

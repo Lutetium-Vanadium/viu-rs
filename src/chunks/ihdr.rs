@@ -45,8 +45,8 @@ impl std::default::Default for IHDRChunk {
 impl IHDRChunk {
     pub fn parse(bytes: &[u8]) -> IHDRChunk {
         let ihdr = IHDRChunk {
-            width: from_bytes(&bytes[0..4]),
-            height: from_bytes(&bytes[4..8]),
+            width: from_bytes_u32(&bytes[0..4]),
+            height: from_bytes_u32(&bytes[4..8]),
             bit_depth: bytes[8],
             color_type: bytes[9],
             compression_method: bytes[10],
