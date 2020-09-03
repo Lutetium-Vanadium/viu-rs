@@ -17,10 +17,11 @@ const HD: bool = true;
 pub fn display_image(image: &Image<RGBColor>) {
     // Terminal dimensions
     let (tw, th) = if let Some((w, h)) = term_size::dimensions() {
-        // 2 characters for one pixel, otherwise it looks squished
         if HD {
+            // Use fg + bg to make one character 2 pixels
             (w - 6, h * 2)
         } else {
+            // 2 characters for one pixel, otherwise it looks squished
             (w / 2 - 6, h)
         }
     } else {
@@ -46,11 +47,12 @@ pub fn display_image(image: &Image<RGBColor>) {
         (tw, (ih as f32 / r) as usize, r)
     };
 
+    println!("Print image height: {}x{} ratio: {}", w, h, r);
+
     let rstep = r * 0.98;
+    let ir2 = 1.0 / (r * r);
 
     let mut downsized_image: Image<RGBColor> = Vec::new();
-
-    println!("Print image height: {}x{} ratio: {}", w, h, r);
 
     for y in 0..h {
         let mut scanline = Vec::new();
@@ -74,7 +76,7 @@ pub fn display_image(image: &Image<RGBColor>) {
                 for j in jstart..jend {
                     let dx = if i == istart {
                         (i + 1) as f32 - sx1
-                    } else if i == iend {
+                    } else if i == iend - 1 {
                         sx2 - (i as f32)
                     } else {
                         1f32
@@ -82,7 +84,7 @@ pub fn display_image(image: &Image<RGBColor>) {
 
                     let dy = if j == jstart {
                         (j + 1) as f32 - sy1
-                    } else if j == jend {
+                    } else if j == jend - 1 {
                         sy2 - (j as f32)
                     } else {
                         1f32
@@ -96,16 +98,16 @@ pub fn display_image(image: &Image<RGBColor>) {
                 }
             }
 
-            let total = ((iend + 1 - istart) * (jend + 1 - jstart)) as f32;
-
-            sr /= total;
-            sg /= total;
-            sb /= total;
+            sr *= ir2;
+            sg *= ir2;
+            sb *= ir2;
 
             scanline.push((sr as u8, sg as u8, sb as u8));
         }
         downsized_image.push(scanline);
     }
+
+    println!();
 
     if HD {
         // 4 times the number of pixels instead of using ██ as one block, use ▀▄ as 4 blocks
@@ -118,15 +120,18 @@ pub fn display_image(image: &Image<RGBColor>) {
                 let (br, bg, bb) = if y + 1 == h {
                     (0, 0, 0)
                 } else {
-                    let (br, bg, mut bb) = downsized_image[y + 1][x];
-                    if br == 0 && bg == 0 && bb == 0 {
-                        bb += 1;
-                    }
-                    (br, bg, bb)
+                    downsized_image[y + 1][x]
                 };
+
+                let s = if tr == 0 && tg == 0 && tb == 0 {
+                    " "
+                } else {
+                    "▀"
+                };
+
                 print!(
-                    "\x1B[38;2;{};{};{};48;2;{};{};{}m▀\x1B[0m",
-                    tr, tg, tb, br, bg, bb
+                    "\x1B[38;2;{};{};{};48;2;{};{};{}m{}\x1B[0m",
+                    tr, tg, tb, br, bg, bb, s
                 );
             }
             println!();
