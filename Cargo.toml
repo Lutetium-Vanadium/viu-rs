@@ -1,5 +1,5 @@
 [package]
-name = "png-viu"
+name = "viu-rs"
 version = "0.1.0"
 authors = ["Lutetium-Vanadium <luv.s7000@gmail.com>"]
 edition = "2018"

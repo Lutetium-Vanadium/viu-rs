@@ -40,14 +40,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "png-viu"
-version = "0.1.0"
-dependencies = [
- "libflate",
- "term_size",
-]
-
-[[package]]
 name = "rle-decode-fast"
 version = "1.0.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -67,6 +59,14 @@ checksum = "1e4129646ca0ed8f45d09b929036bafad5377103edd06e50bf574b353d2b08d9"
 dependencies = [
  "libc",
  "winapi",
+]
+
+[[package]]
+name = "viu-rs"
+version = "0.1.0"
+dependencies = [
+ "libflate",
+ "term_size",
 ]
 
 [[package]]
