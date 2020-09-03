@@ -138,88 +138,150 @@ fn palette(
         Some(pt) => pt,
         None => panic!("Palette not found"),
     };
+
+    // for all color.2 = 1: Ansi displays completely transparent if colour is set to (0, 0, 0) [at least for my terminal]
+    //      with rgb colour codes. This make sure that opaque black pizels will be put as black instead
+    //      of transparent
+    //      Blue is increased since its least receptive for the human eye
     match bit_depth {
         1 => {
             for i in 0..8 {
-                scanline.push(pt.colors[(image_data[0] >> (7 - i) & 0b1) as usize]);
+                let mut color = pt.colors[(image_data[0] >> (7 - i) & 0b1) as usize];
+                if color.0 == 0 && color.1 == 0 && color.2 == 0 {
+                    color.2 = 1;
+                }
+                scanline.push(color);
             }
         }
         2 => {
             for i in 0..4 {
-                scanline.push(pt.colors[(image_data[0] >> (6 - i * 2) & 0b11) as usize]);
+                let mut color = pt.colors[(image_data[0] >> (6 - i * 2) & 0b11) as usize];
+                if color.0 == 0 && color.1 == 0 && color.2 == 0 {
+                    color.2 = 1;
+                }
+                scanline.push(color);
             }
         }
         4 => {
-            scanline.push(pt.colors[(image_data[0] >> 4 & 0b1111) as usize]);
-            scanline.push(pt.colors[(image_data[0] & 0b1111) as usize]);
+            let mut color = pt.colors[(image_data[0] >> 4 & 0b1111) as usize];
+            if color.0 == 0 && color.1 == 0 && color.2 == 0 {
+                color.2 = 1;
+            }
+            scanline.push(color);
+            color = pt.colors[(image_data[0] & 0b1111) as usize];
+            if color.0 == 0 && color.1 == 0 && color.2 == 0 {
+                color.2 = 1;
+            }
+            scanline.push(color);
         }
-        8 => scanline.push(pt.colors[image_data[0] as usize]),
+        8 => {
+            let mut color = pt.colors[image_data[0] as usize];
+            if color.0 == 0 && color.1 == 0 && color.2 == 0 {
+                color.2 = 1;
+            }
+            scanline.push(color);
+        }
         _ => panic!("invalid bit depth"),
     }
 }
 
 fn rgba(image_data: &[u8], bit_depth: u8, scanline: &mut Vec<RGBColor>) {
-    match bit_depth {
-        8 => {
-            scanline.push(if image_data[3] >= 128 {
-                (image_data[0], image_data[1], image_data[2])
-            } else {
-                (0, 0, 0)
-            });
-        }
-        16 => {
-            let alpha = from_bytes_u16(&image_data[6..8]);
-            if alpha >= 256 {
-                scanline.push((
-                    (from_bytes_u16(&image_data[..2]) / 256) as u8,
-                    (from_bytes_u16(&image_data[2..4]) / 256) as u8,
-                    (from_bytes_u16(&image_data[4..6]) / 256) as u8,
-                ));
-            } else {
-                scanline.push((0, 0, 0));
-            }
-        }
+    let (r, g, mut b, a) = match bit_depth {
+        8 => (image_data[0], image_data[1], image_data[2], image_data[3]),
+        16 => (
+            (from_bytes_u16(&image_data[..2]) / 256) as u8,
+            (from_bytes_u16(&image_data[2..4]) / 256) as u8,
+            (from_bytes_u16(&image_data[4..6]) / 256) as u8,
+            (from_bytes_u16(&image_data[6..8]) / 256) as u8,
+        ),
         _ => panic!("invalid bit depth"),
+    };
+
+    // Ansi displays completely transparent if colour is set to (0, 0, 0) [at least for my terminal]
+    // with rgb colour codes. This make sure that opaque black pizels will be put as black instead
+    // of transparent, but if opacity is 0, a transparent pixel will be shown
+    // Blue is increased since its least receptive for the human eye
+    if r == 0 && g == 0 && b == 0 {
+        b = 1;
     }
+
+    let opacity = (a as f32) / 256.0;
+
+    scanline.push((
+        (r as f32 * opacity) as u8,
+        (g as f32 * opacity) as u8,
+        (b as f32 * opacity) as u8,
+    ));
 }
 
 fn rgb(image_data: &[u8], bit_depth: u8, scanline: &mut Vec<RGBColor>) {
-    match bit_depth {
-        8 => scanline.push((image_data[0], image_data[1], image_data[2])),
-        16 => {
-            scanline.push((
-                (from_bytes_u16(&image_data[..2]) / 256) as u8,
-                (from_bytes_u16(&image_data[2..4]) / 256) as u8,
-                (from_bytes_u16(&image_data[4..6]) / 256) as u8,
-            ));
-        }
+    let (r, g, mut b) = match bit_depth {
+        8 => (image_data[0], image_data[1], image_data[2]),
+        16 => (
+            (from_bytes_u16(&image_data[..2]) / 256) as u8,
+            (from_bytes_u16(&image_data[2..4]) / 256) as u8,
+            (from_bytes_u16(&image_data[4..6]) / 256) as u8,
+        ),
         _ => panic!("invalid bit depth"),
     };
+
+    // Ansi displays completely transparent if colour is set to (0, 0, 0) [at least for my terminal]
+    // with rgb colour codes. This make sure that opaque black pizels will be put as black instead
+    // of transparent
+    // Blue is increased since its least receptive for the human eye
+    if r == 0 && g == 0 && b == 0 {
+        b = 1;
+    }
+    scanline.push((r, g, b));
 }
 
 fn gray(image_data: &[u8], bit_depth: u8, scanline: &mut Vec<RGBColor>) {
+    // for all val = 1: Ansi displays completely transparent if colour is set to (0, 0, 0) [at least for my terminal]
+    //      with rgb colour codes. This make sure that opaque black pizels will be put as black instead
+    //      of transparent
     match bit_depth {
         1 => {
             for i in 0..8 {
-                let val = (image_data[0] >> (7 - i) & 0b1) * 255;
+                let mut val = (image_data[0] >> (7 - i) & 0b1) * 255;
+                if val == 0 {
+                    val = 1;
+                }
                 scanline.push((val, val, val));
             }
         }
         2 => {
             for i in 0..4 {
-                let val = (image_data[0] >> (6 - i * 2) & 0b11) * 85;
+                let mut val = (image_data[0] >> (6 - i * 2) & 0b11) * 85;
+                if val == 0 {
+                    val = 1;
+                }
                 scanline.push((val, val, val));
             }
         }
         4 => {
-            let val = (image_data[0] >> 4 & 0b1111) * 17;
+            let mut val = (image_data[0] >> 4 & 0b1111) * 17;
+            if val == 0 {
+                val = 1;
+            }
             scanline.push((val, val, val));
-            let val = (image_data[0] & 0b1111) * 17;
+            val = (image_data[0] & 0b1111) * 17;
+            if val == 0 {
+                val = 1;
+            }
             scanline.push((val, val, val));
         }
-        8 => scanline.push((image_data[0], image_data[0], image_data[0])),
+        8 => {
+            let mut val = image_data[0];
+            if val == 0 {
+                val = 1;
+            }
+            scanline.push((val, val, val))
+        }
         16 => {
-            let val = (from_bytes_u16(image_data) / 256) as u8;
+            let mut val = (from_bytes_u16(image_data) / 256) as u8;
+            if val == 0 {
+                val = 1;
+            }
             scanline.push((val, val, val));
         }
         _ => panic!("Invalid bit depth"),
@@ -227,23 +289,23 @@ fn gray(image_data: &[u8], bit_depth: u8, scanline: &mut Vec<RGBColor>) {
 }
 
 fn gray_a(image_data: &[u8], bit_depth: u8, scanline: &mut Vec<RGBColor>) {
-    match bit_depth {
-        8 => {
-            scanline.push(if image_data[1] >= 128 {
-                (image_data[0], image_data[0], image_data[0])
-            } else {
-                (0, 0, 0)
-            });
-        }
-        16 => {
-            let alpha = from_bytes_u16(&image_data[2..4]);
-            scanline.push(if alpha >= 256 {
-                let val = (from_bytes_u16(&image_data[..2]) / 256) as u8;
-                (val, val, val)
-            } else {
-                (0, 0, 0)
-            });
-        }
+    let (mut val, alpha) = match bit_depth {
+        8 => (image_data[0], image_data[1]),
+        16 => (
+            (from_bytes_u16(&image_data[2..4]) / 256) as u8,
+            (from_bytes_u16(&image_data[..2]) / 256) as u8,
+        ),
         _ => panic!("Invalid bit depth"),
     };
+
+    // Ansi displays completely transparent if colour is set to (0, 0, 0) [at least for my terminal]
+    // with rgb colour codes. This make sure that opaque black pizels will be put as black instead
+    // of transparent, but if opacity is 0, a transparent pixel will be shown
+    if val == 0 {
+        val = 1;
+    }
+
+    let val = ((val as f32) * (alpha as f32) / 256.0) as u8;
+
+    scanline.push((val, val, val));
 }
