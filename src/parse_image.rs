@@ -66,14 +66,13 @@ pub fn parse(mut image_data: Vec<u8>, ihdr_chunk: &ihdr::IHDRChunk) -> Image<RGB
                         0
                     } as i32;
 
-                    let topleft = if x >= px_size && i > 0 {
+                    let topleft = if x - s >= px_size && i > 0 {
                         image_data[x - px_size - scanline_length as usize]
                     } else {
                         0
                     } as i32;
 
-                    image_data[x] =
-                        image_data[x].wrapping_add(paeth_predictor(left, top, topleft, x));
+                    image_data[x] = image_data[x].wrapping_add(paeth_predictor(left, top, topleft));
                 }
             }
             _ => panic!("Unrecognised filter method"),
@@ -112,11 +111,12 @@ pub fn parse(mut image_data: Vec<u8>, ihdr_chunk: &ihdr::IHDRChunk) -> Image<RGB
     image
 }
 
-fn paeth_predictor(a: i32, b: i32, c: i32, i: usize) -> u8 {
+fn paeth_predictor(a: i32, b: i32, c: i32) -> u8 {
     let p = a + b - c; // initial estimate
     let pa = (p - a).abs(); // distances to a, b, c
     let pb = (p - b).abs();
     let pc = (p - c).abs();
+
     // return nearest of a,b,c,
     // breaking ties in order a,b,c.
     if pa <= pb && pa <= pc {
@@ -138,29 +138,112 @@ fn palette(
         Some(pt) => pt,
         None => panic!("Palette not found"),
     };
-    scanline.push(pt.colors[image_data[0] as usize]);
+    match bit_depth {
+        1 => {
+            for i in 0..8 {
+                scanline.push(pt.colors[(image_data[0] >> (7 - i) & 0b1) as usize]);
+            }
+        }
+        2 => {
+            for i in 0..4 {
+                scanline.push(pt.colors[(image_data[0] >> (6 - i * 2) & 0b11) as usize]);
+            }
+        }
+        4 => {
+            scanline.push(pt.colors[(image_data[0] >> 4 & 0b1111) as usize]);
+            scanline.push(pt.colors[(image_data[0] & 0b1111) as usize]);
+        }
+        8 => scanline.push(pt.colors[image_data[0] as usize]),
+        _ => panic!("invalid bit depth"),
+    }
 }
 
 fn rgba(image_data: &[u8], bit_depth: u8, scanline: &mut Vec<RGBColor>) {
-    scanline.push(if image_data[3] >= 128 {
-        (image_data[0], image_data[1], image_data[2])
-    } else {
-        (0, 0, 0)
-    });
+    match bit_depth {
+        8 => {
+            scanline.push(if image_data[3] >= 128 {
+                (image_data[0], image_data[1], image_data[2])
+            } else {
+                (0, 0, 0)
+            });
+        }
+        16 => {
+            let alpha = from_bytes_u16(&image_data[6..8]);
+            if alpha >= 256 {
+                scanline.push((
+                    (from_bytes_u16(&image_data[..2]) / 256) as u8,
+                    (from_bytes_u16(&image_data[2..4]) / 256) as u8,
+                    (from_bytes_u16(&image_data[4..6]) / 256) as u8,
+                ));
+            } else {
+                scanline.push((0, 0, 0));
+            }
+        }
+        _ => panic!("invalid bit depth"),
+    }
 }
 
 fn rgb(image_data: &[u8], bit_depth: u8, scanline: &mut Vec<RGBColor>) {
-    scanline.push((image_data[0], image_data[1], image_data[2]));
+    match bit_depth {
+        8 => scanline.push((image_data[0], image_data[1], image_data[2])),
+        16 => {
+            scanline.push((
+                (from_bytes_u16(&image_data[..2]) / 256) as u8,
+                (from_bytes_u16(&image_data[2..4]) / 256) as u8,
+                (from_bytes_u16(&image_data[4..6]) / 256) as u8,
+            ));
+        }
+        _ => panic!("invalid bit depth"),
+    };
 }
 
 fn gray(image_data: &[u8], bit_depth: u8, scanline: &mut Vec<RGBColor>) {
-    scanline.push((image_data[0], image_data[0], image_data[0]));
+    match bit_depth {
+        1 => {
+            for i in 0..8 {
+                let val = (image_data[0] >> (7 - i) & 0b1) * 255;
+                scanline.push((val, val, val));
+            }
+        }
+        2 => {
+            for i in 0..4 {
+                let val = (image_data[0] >> (6 - i * 2) & 0b11) * 85;
+                scanline.push((val, val, val));
+            }
+        }
+        4 => {
+            let val = (image_data[0] >> 4 & 0b1111) * 17;
+            scanline.push((val, val, val));
+            let val = (image_data[0] & 0b1111) * 17;
+            scanline.push((val, val, val));
+        }
+        8 => scanline.push((image_data[0], image_data[0], image_data[0])),
+        16 => {
+            let val = (from_bytes_u16(image_data) / 256) as u8;
+            scanline.push((val, val, val));
+        }
+        _ => panic!("Invalid bit depth"),
+    }
 }
 
 fn gray_a(image_data: &[u8], bit_depth: u8, scanline: &mut Vec<RGBColor>) {
-    scanline.push(if image_data[1] >= 128 {
-        (image_data[0], image_data[0], image_data[0])
-    } else {
-        (0, 0, 0)
-    });
+    match bit_depth {
+        8 => {
+            scanline.push(if image_data[1] >= 128 {
+                (image_data[0], image_data[0], image_data[0])
+            } else {
+                (0, 0, 0)
+            });
+        }
+        16 => {
+            let alpha = from_bytes_u16(&image_data[2..4]);
+            scanline.push(if alpha >= 256 {
+                let val = (from_bytes_u16(&image_data[..2]) / 256) as u8;
+                (val, val, val)
+            } else {
+                (0, 0, 0)
+            });
+        }
+        _ => panic!("Invalid bit depth"),
+    };
 }
