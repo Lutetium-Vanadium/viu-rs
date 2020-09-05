@@ -1,5 +1,38 @@
+use crate::chunks::{ancillary, ihdr, plte};
 pub type RGBColor = (u8, u8, u8);
 pub type Image<T> = Vec<Vec<T>>;
+
+pub struct Metadata {
+    pub ihdr_chunk: ihdr::IHDRChunk,
+    palette: Option<plte::PLTEChunk>,
+    alpha: Option<ancillary::TRNSChunk>,
+}
+
+impl Metadata {
+    pub fn new() -> Metadata {
+        Metadata {
+            alpha: None,
+            ihdr_chunk: Default::default(),
+            palette: None,
+        }
+    }
+
+    pub fn palette(&self) -> &Option<plte::PLTEChunk> {
+        &self.palette
+    }
+
+    pub fn set_palette(&mut self, palette: plte::PLTEChunk) {
+        self.palette = Some(palette);
+    }
+
+    pub fn alpha(&self) -> &Option<ancillary::TRNSChunk> {
+        &self.alpha
+    }
+
+    pub fn set_alpha(&mut self, alpha: ancillary::TRNSChunk) {
+        self.alpha = Some(alpha);
+    }
+}
 
 pub fn from_bytes_u32(bytes: &[u8]) -> u32 {
     ((bytes[0] as u32) << 24)
@@ -19,10 +52,10 @@ pub fn display_image(image: &Image<RGBColor>) {
     let (tw, th) = if let Some((w, h)) = term_size::dimensions() {
         if HD {
             // Use fg + bg to make one character 2 pixels
-            (w - 6, h * 2)
+            (w, h * 2)
         } else {
             // 2 characters for one pixel, otherwise it looks squished
-            (w / 2 - 6, h)
+            (w / 2, h)
         }
     } else {
         return println!("Failed to get Terminal size");
@@ -114,7 +147,6 @@ pub fn display_image(image: &Image<RGBColor>) {
         // Currently colours are messed up, due to bad downsizing algorithm
         let mut y = 0;
         while y < h {
-            print!("{:02}: ", y);
             for x in 0..w {
                 let (tr, tg, tb) = downsized_image[y][x];
                 let (br, bg, bb) = if y + 1 == h {

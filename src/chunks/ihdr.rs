@@ -1,5 +1,4 @@
-use super::plte::PLTEChunk;
-use crate::helpers::*;
+use crate::common::*;
 
 #[derive(Debug)]
 pub enum ColorType {
@@ -24,7 +23,6 @@ pub struct IHDRChunk {
     compression_method: u8,
     filter_method: u8,
     interlace_method: u8,
-    palette: Option<PLTEChunk>,
 }
 
 impl std::default::Default for IHDRChunk {
@@ -37,7 +35,6 @@ impl std::default::Default for IHDRChunk {
             compression_method: 0,
             filter_method: 0,
             interlace_method: 0,
-            palette: None,
         }
     }
 }
@@ -52,7 +49,6 @@ impl IHDRChunk {
             compression_method: bytes[10],
             filter_method: bytes[11],
             interlace_method: bytes[12],
-            palette: None,
         };
 
         // Check has a valid bit depth
@@ -147,13 +143,5 @@ impl IHDRChunk {
             1 => InterlaceMethod::Adam7,
             _ => panic!("Unknown interlace methods: {}", self.interlace_method),
         }
-    }
-
-    pub fn palette(&self) -> &Option<PLTEChunk> {
-        &self.palette
-    }
-
-    pub fn set_palette(&mut self, palette: PLTEChunk) {
-        self.palette = Some(palette);
     }
 }

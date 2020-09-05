@@ -1,4 +1,4 @@
-use crate::helpers::RGBColor;
+use crate::common::RGBColor;
 
 pub struct PLTEChunk {
     pub length: usize,
