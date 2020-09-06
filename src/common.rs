@@ -44,6 +44,16 @@ impl Metadata {
     }
 }
 
+#[macro_export]
+macro_rules! is_transparent {
+    ($col: ty) => {
+        ($col.0 == 0 && $col.1 == 0 && $col.2 == 0)
+    };
+    ($r: expr, $g: expr, $b: expr) => {
+        ($r == 0 && $g == 0 && $b == 0)
+    };
+}
+
 pub fn from_bytes_u32(bytes: &[u8]) -> u32 {
     ((bytes[0] as u32) << 24)
         + ((bytes[1] as u32) << 16)
@@ -165,7 +175,7 @@ pub fn display_image(image: &Image<RGBColor>) {
                     downsized_image[y + 1][x]
                 };
 
-                let s = if tr == 0 && tg == 0 && tb == 0 {
+                let s = if is_transparent!(tr, tg, tb) {
                     " "
                 } else {
                     "▀"

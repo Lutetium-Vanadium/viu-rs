@@ -151,7 +151,7 @@ fn palette(image_data: &[u8], metadata: &Metadata, scanline: &mut Vec<RGBColor>)
             for i in 0..8 {
                 let i = (image_data[0] >> (7 - i) & 0b1) as usize;
                 let (r, g, mut b) = pt.colors[i];
-                if r == 0 && g == 0 && b == 0 {
+                if is_transparent!(r, g, b) {
                     b = 1;
                 }
                 match alpha {
@@ -164,7 +164,7 @@ fn palette(image_data: &[u8], metadata: &Metadata, scanline: &mut Vec<RGBColor>)
             for i in 0..4 {
                 let i = (image_data[0] >> (6 - i * 2) & 0b11) as usize;
                 let (r, g, mut b) = pt.colors[i];
-                if r == 0 && g == 0 && b == 0 {
+                if is_transparent!(r, g, b) {
                     b = 1;
                 }
                 match alpha {
@@ -177,7 +177,7 @@ fn palette(image_data: &[u8], metadata: &Metadata, scanline: &mut Vec<RGBColor>)
             for i in 0..2 {
                 let i = (image_data[0] >> (4 - i * 4) & 0b1111) as usize;
                 let (r, g, mut b) = pt.colors[i];
-                if r == 0 && g == 0 && b == 0 {
+                if is_transparent!(r, g, b) {
                     b = 1;
                 }
                 match alpha {
@@ -189,7 +189,7 @@ fn palette(image_data: &[u8], metadata: &Metadata, scanline: &mut Vec<RGBColor>)
         8 => {
             let i = image_data[0] as usize;
             let (r, g, mut b) = pt.colors[i];
-            if r == 0 && g == 0 && b == 0 {
+            if is_transparent!(r, g, b) {
                 b = 1;
             }
             match alpha {
@@ -217,7 +217,7 @@ fn rgba(image_data: &[u8], metadata: &Metadata, scanline: &mut Vec<RGBColor>) {
     // with rgb colour codes. This make sure that opaque black pizels will be put as black instead
     // of transparent, but if opacity is 0, a transparent pixel will be shown
     // Blue is increased since its least receptive for the human eye
-    if r == 0 && g == 0 && b == 0 {
+    if is_transparent!(r, g, b) {
         b = 1;
     }
 
@@ -239,7 +239,7 @@ fn rgb(image_data: &[u8], metadata: &Metadata, scanline: &mut Vec<RGBColor>) {
     // with rgb colour codes. This make sure that opaque black pizels will be put as black instead
     // of transparent
     // Blue is increased since its least receptive for the human eye
-    if r == 0 && g == 0 && b == 0 {
+    if is_transparent!(r, g, b) {
         b = 1;
     }
 
