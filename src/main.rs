@@ -97,6 +97,22 @@ fn main() -> io::Result<()> {
             } else if chunk_type == chunk_types::tIME {
                 let time_chunk = ancillary::TIMEChunk::parse(chunk_data);
                 print!("\nLast Changed: {}", time_chunk);
+            } else if chunk_type == chunk_types::tEXt {
+                let text_chunk =
+                    ancillary::TextChunk::parse(ancillary::TextChunk::split(chunk_data)).unwrap();
+                if text_chunk.key.len() > 0 {
+                    println!("{}: {}", text_chunk.key, text_chunk.text);
+                }
+            } else if chunk_type == chunk_types::zTXt {
+                let (keyword_chunk, text_chunk) = ancillary::TextChunk::split(chunk_data);
+                let mut decoder = Decoder::new(&text_chunk[..])?;
+                let mut text_chunk = Vec::new();
+                decoder.read_to_end(&mut text_chunk)?;
+                let text_chunk =
+                    ancillary::TextChunk::parse((keyword_chunk, &text_chunk[..])).unwrap();
+                if text_chunk.key.len() > 0 {
+                    println!("{}: {}", text_chunk.key, text_chunk.text);
+                }
             }
             println!("");
         }

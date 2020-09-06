@@ -11,4 +11,8 @@ pub mod chunk_types {
     pub static tRNS: [u8; 4] = [116, 82, 78, 83];
     #[allow(non_upper_case_globals)]
     pub static tIME: [u8; 4] = [116, 73, 77, 69];
+    #[allow(non_upper_case_globals)]
+    pub static tEXt: [u8; 4] = [116, 69, 88, 116];
+    #[allow(non_upper_case_globals)]
+    pub static zTXt: [u8; 4] = [122, 84, 88, 116];
 }

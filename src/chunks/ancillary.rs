@@ -101,3 +101,30 @@ impl fmt::Display for TIMEChunk {
         )
     }
 }
+
+use std::str;
+
+pub struct TextChunk {
+    pub key: String,
+    pub text: String,
+}
+
+type SplitChunk<'a> = (&'a [u8], &'a [u8]);
+
+impl TextChunk {
+    pub fn split(bytes: &[u8]) -> SplitChunk {
+        let mut i = 0;
+        while bytes[i] != 0 {
+            i += 1;
+        }
+        i += 1;
+        (&bytes[0..i], &bytes[i + 1..])
+    }
+
+    pub fn parse((keyword_bytes, text_bytes): SplitChunk) -> Result<TextChunk, str::Utf8Error> {
+        let key = str::from_utf8(keyword_bytes)?.to_owned();
+        let text = str::from_utf8(text_bytes)?.to_owned();
+
+        Ok(TextChunk { key, text })
+    }
+}
