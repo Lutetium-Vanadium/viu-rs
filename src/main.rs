@@ -101,7 +101,7 @@ fn main() -> io::Result<()> {
                 let text_chunk =
                     ancillary::TextChunk::parse(ancillary::TextChunk::split(chunk_data)).unwrap();
                 if text_chunk.key.len() > 0 {
-                    println!("{}: {}", text_chunk.key, text_chunk.text);
+                    print!("\n{}: {}", text_chunk.key, text_chunk.text);
                 }
             } else if chunk_type == chunk_types::zTXt {
                 let (keyword_chunk, text_chunk) = ancillary::TextChunk::split(chunk_data);
@@ -111,10 +111,11 @@ fn main() -> io::Result<()> {
                 let text_chunk =
                     ancillary::TextChunk::parse((keyword_chunk, &text_chunk[..])).unwrap();
                 if text_chunk.key.len() > 0 {
-                    println!("{}: {}", text_chunk.key, text_chunk.text);
+                    print!("\n{}: {}", text_chunk.key, text_chunk.text);
                 }
             } else if chunk_type == chunk_types::bKGD {
                 let bkgd = ancillary::parse_bkgd_chunk(chunk_data, &metadata);
+                println!("Got backround: {:?}", bkgd);
                 metadata.set_bkgd(bkgd);
             }
             println!("");
@@ -134,7 +135,7 @@ fn main() -> io::Result<()> {
     assert_eq!(image[0].len() as u32, metadata.ihdr_chunk.width());
     assert_eq!(image.len() as u32, metadata.ihdr_chunk.height());
 
-    display_image(&image);
+    display_image(&image, metadata.bkgd());
 
     Ok(())
 }

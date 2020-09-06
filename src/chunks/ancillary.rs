@@ -130,7 +130,7 @@ impl TextChunk {
 }
 
 pub fn parse_bkgd_chunk(bytes: &[u8], metadata: &Metadata) -> RGBColor {
-    match metadata.ihdr_chunk.color_type() {
+    let (r, g, b) = match metadata.ihdr_chunk.color_type() {
         ihdr::ColorType::Palette => match metadata.palette() {
             Some(pt) => pt.colors[bytes[0] as usize],
             None => panic!("Palette not found"),
@@ -161,5 +161,10 @@ pub fn parse_bkgd_chunk(bytes: &[u8], metadata: &Metadata) -> RGBColor {
             };
             (r, g, b)
         }
+    };
+    if is_transparent(r, g, b) {
+        (0, 0, 1)
+    } else {
+        (r, g, b)
     }
 }
