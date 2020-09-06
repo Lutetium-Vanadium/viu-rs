@@ -15,4 +15,6 @@ pub mod chunk_types {
     pub static tEXt: [u8; 4] = [116, 69, 88, 116];
     #[allow(non_upper_case_globals)]
     pub static zTXt: [u8; 4] = [122, 84, 88, 116];
+    #[allow(non_upper_case_globals)]
+    pub static bKGD: [u8; 4] = [98, 75, 71, 68];
 }

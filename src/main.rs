@@ -113,6 +113,9 @@ fn main() -> io::Result<()> {
                 if text_chunk.key.len() > 0 {
                     println!("{}: {}", text_chunk.key, text_chunk.text);
                 }
+            } else if chunk_type == chunk_types::bKGD {
+                let bkgd = ancillary::parse_bkgd_chunk(chunk_data, &metadata);
+                metadata.set_bkgd(bkgd);
             }
             println!("");
         }

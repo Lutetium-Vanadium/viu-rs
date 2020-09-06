@@ -128,3 +128,38 @@ impl TextChunk {
         Ok(TextChunk { key, text })
     }
 }
+
+pub fn parse_bkgd_chunk(bytes: &[u8], metadata: &Metadata) -> RGBColor {
+    match metadata.ihdr_chunk.color_type() {
+        ihdr::ColorType::Palette => match metadata.palette() {
+            Some(pt) => pt.colors[bytes[0] as usize],
+            None => panic!("Palette not found"),
+        },
+        ihdr::ColorType::Gray | ihdr::ColorType::GrayA => {
+            let val = from_bytes_u16(bytes);
+            let bit_depth = metadata.ihdr_chunk.bit_depth();
+            let val = if bit_depth == 16 {
+                (val / 256) as u8
+            } else {
+                (val as u8) * 8 / bit_depth
+            };
+            (val, val, val)
+        }
+        ihdr::ColorType::RGBA | ihdr::ColorType::RGB => {
+            let r = from_bytes_u16(bytes);
+            let g = from_bytes_u16(bytes);
+            let b = from_bytes_u16(bytes);
+            let bit_depth = metadata.ihdr_chunk.bit_depth();
+            let (r, g, b) = if bit_depth == 16 {
+                ((r / 256) as u8, (g / 256) as u8, (b / 256) as u8)
+            } else {
+                (
+                    (r as u8) * 8 / bit_depth,
+                    (g as u8) * 8 / bit_depth,
+                    (b as u8) * 8 / bit_depth,
+                )
+            };
+            (r, g, b)
+        }
+    }
+}

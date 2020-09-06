@@ -6,6 +6,7 @@ pub struct Metadata {
     pub ihdr_chunk: ihdr::IHDRChunk,
     palette: Option<plte::PLTEChunk>,
     alpha: Option<ancillary::TRNSChunk>,
+    bkgd: RGBColor,
 }
 
 impl Metadata {
@@ -14,6 +15,7 @@ impl Metadata {
             alpha: None,
             ihdr_chunk: Default::default(),
             palette: None,
+            bkgd: (0, 0, 0), // Default background is transparent
         }
     }
 
@@ -31,6 +33,14 @@ impl Metadata {
 
     pub fn set_alpha(&mut self, alpha: ancillary::TRNSChunk) {
         self.alpha = Some(alpha);
+    }
+
+    pub fn bkgd(&self) -> &RGBColor {
+        &self.bkgd
+    }
+
+    pub fn set_bkgd(&mut self, bkgd: RGBColor) {
+        self.bkgd = bkgd;
     }
 }
 
