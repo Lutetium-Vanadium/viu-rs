@@ -44,14 +44,8 @@ impl Metadata {
     }
 }
 
-#[macro_export]
-macro_rules! is_transparent {
-    ($col: ty) => {
-        ($col.0 == 0 && $col.1 == 0 && $col.2 == 0)
-    };
-    ($r: expr, $g: expr, $b: expr) => {
-        ($r == 0 && $g == 0 && $b == 0)
-    };
+pub fn is_transparent(r: u8, g: u8, b: u8) -> bool {
+    r == 0 && g == 0 && b == 0
 }
 
 pub fn from_bytes_u32(bytes: &[u8]) -> u32 {

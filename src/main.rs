@@ -6,7 +6,6 @@ use std::io::prelude::*;
 use std::str;
 
 mod chunks;
-#[macro_use]
 mod common;
 mod parse_image;
 
