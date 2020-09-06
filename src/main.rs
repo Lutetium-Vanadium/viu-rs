@@ -7,6 +7,7 @@ use std::str;
 
 mod chunks;
 mod common;
+mod crc;
 mod parse_image;
 
 use chunks::*;
@@ -30,6 +31,7 @@ fn main() -> io::Result<()> {
     }
 
     let mut metadata = Metadata::new();
+    let crc_handler = crc::CRCHandler::new();
 
     let mut parsed_first = false;
     let mut zlib_stream: Vec<u8> = Vec::new();
@@ -37,6 +39,7 @@ fn main() -> io::Result<()> {
     loop {
         let chunk_length = from_bytes_u32(&buffer[i..i + 4]) as usize;
         i += 4;
+        let crc_chunk_start = i;
         let chunk_type = &buffer[i..i + 4];
         i += 4;
         print!(
@@ -46,9 +49,20 @@ fn main() -> io::Result<()> {
         );
         let chunk_data = &buffer[i..i + chunk_length];
         i += chunk_length;
-        let crc = &buffer[i..i + 4];
+        let crc = from_bytes_u32(&buffer[i..i + 4]);
+        match crc_handler.verify(crc, &buffer[crc_chunk_start..i]) {
+            Err(calc_crc) => {
+                panic!(
+                    "Invalid Chunk; CRC didnt match -> got: {}   calculated: {}",
+                    crc, calc_crc,
+                );
+            }
+            _ => {}
+        };
+        // i incremented after crc check because crc bytes shouldnt be included in the crc check
         i += 4;
-        print!("\tCRC: {:x?}", crc);
+
+        print!("\tCRC: {}", crc);
 
         if !parsed_first && chunk_type != chunk_types::IHDR {
             panic!(
@@ -64,6 +78,7 @@ fn main() -> io::Result<()> {
             println!("\t\tIMP");
             if chunk_type == chunk_types::IHDR {
                 metadata.ihdr_chunk = ihdr::IHDRChunk::parse(chunk_data);
+                println!("DEBUG: {:0x?}", &buffer[crc_chunk_start..i]);
                 println!(
                     "Image size: {}x{}",
                     metadata.ihdr_chunk.width(),
@@ -108,14 +123,14 @@ fn main() -> io::Result<()> {
                 let mut decoder = Decoder::new(&text_chunk[..])?;
                 let mut text_chunk = Vec::new();
                 decoder.read_to_end(&mut text_chunk)?;
-                let text_chunk =
+                let _text_chunk =
                     ancillary::TextChunk::parse((keyword_chunk, &text_chunk[..])).unwrap();
-                if text_chunk.key.len() > 0 {
-                    print!("\n{}: {}", text_chunk.key, text_chunk.text);
-                }
+            // if text_chunk.key.len() > 0 {
+            //     print!("\n{}: {}", text_chunk.key, text_chunk.text);
+            // }
             } else if chunk_type == chunk_types::bKGD {
                 let bkgd = ancillary::parse_bkgd_chunk(chunk_data, &metadata);
-                println!("Got backround: {:?}", bkgd);
+                print!("\nGot backround: {:?}", bkgd);
                 metadata.set_bkgd(bkgd);
             }
             println!("");
