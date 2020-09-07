@@ -9,14 +9,31 @@ use std::str;
 mod chunks;
 mod common;
 mod crc;
+mod display_image;
 mod parse_image;
 
 use chunks::*;
 use common::*;
+use display_image::display_image;
 
-fn main() -> io::Result<()> {
+const HELP_STR: &'static str = "Usage: viurs [<option>] image.png\n
+Available Options:
+    blur: (unimplemented)
+    ascii: (unimplemented)
+    show: Shows the image.
+    <no-option-given>: Shows the image.";
+
+fn run() -> io::Result<()> {
     let args: Vec<String> = env::args().collect();
-    let file_name = &args[1];
+
+    let (file_name, effect) = match args[1].as_str() {
+        "-h" | "--help" => return Ok(println!("{}", HELP_STR)),
+        "blur" => (&args[3], Effect::Blur),
+        "ascii" => (&args[2], Effect::ASCII),
+        "show" => (&args[2], Effect::NoEffect),
+        _ => (&args[1], Effect::NoEffect),
+    };
+
     let mut f = fs::File::open(file_name)?;
 
     // Prevent Vector reallocation because size is too small
@@ -93,7 +110,7 @@ fn main() -> io::Result<()> {
             println!("\t\tIMP");
             if chunk_type == chunk_types::IHDR {
                 metadata.ihdr_chunk = ihdr::IHDRChunk::parse(chunk_data)?;
-                println!("DEBUG: {:0x?}", &buffer[crc_chunk_start..i]);
+
                 println!(
                     "Image size: {}x{}",
                     metadata.ihdr_chunk.width(),
@@ -107,8 +124,10 @@ fn main() -> io::Result<()> {
                 )
             } else if chunk_type == chunk_types::PLTE {
                 let plte_chunk = plte::PLTEChunk::parse(chunk_data, chunk_length);
+
                 println!("Palette length: {}", plte_chunk.length);
                 println!("Palette Colors: {:?}", plte_chunk.colors);
+
                 metadata.set_palette(plte_chunk);
             } else if chunk_type == chunk_types::IDAT {
                 zlib_stream.extend(chunk_data.iter());
@@ -131,6 +150,7 @@ fn main() -> io::Result<()> {
                 }
             } else if chunk_type == chunk_types::tIME {
                 let time_chunk = ancillary::TIMEChunk::parse(chunk_data);
+
                 print!("\nLast Changed: {}", time_chunk);
             } else if chunk_type == chunk_types::tEXt {
                 match ancillary::TextChunk::parse(ancillary::TextChunk::split(chunk_data)) {
@@ -143,10 +163,12 @@ fn main() -> io::Result<()> {
                 };
             } else if chunk_type == chunk_types::zTXt {
                 let (keyword_chunk, text_chunk) = ancillary::TextChunk::split(chunk_data);
-                // Ideally errors should be just printed here, instead of programming ending
+
+                // Ideally errors should be just printed here, instead of programme ending
                 let mut decoder = Decoder::new(&text_chunk[..])?;
                 let mut text_chunk = Vec::new();
                 decoder.read_to_end(&mut text_chunk)?;
+
                 match ancillary::TextChunk::parse((keyword_chunk, &text_chunk[..])) {
                     Ok(text_chunk) => {
                         if text_chunk.key.len() > 0 {
@@ -163,9 +185,12 @@ fn main() -> io::Result<()> {
                         (0, 0, 0)
                     }
                 };
+
                 print!("\nGot backround: {:?}", bkgd);
+
                 metadata.set_bkgd(bkgd);
             }
+
             println!("");
         }
     }
@@ -183,7 +208,18 @@ fn main() -> io::Result<()> {
     assert_eq!(image[0].len() as u32, metadata.ihdr_chunk.width());
     assert_eq!(image.len() as u32, metadata.ihdr_chunk.height());
 
+    let image = auto_downsize_image(image)?;
+
     display_image(&image, metadata.bkgd());
 
     Ok(())
+}
+
+fn main() {
+    match run() {
+        Err(e) => {
+            eprintln!("{}", e);
+        }
+        _ => {}
+    };
 }

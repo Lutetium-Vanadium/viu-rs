@@ -1,6 +1,16 @@
 use crate::chunks::{ancillary, ihdr, plte};
+use std::io;
+
 pub type RGBColor = (u8, u8, u8);
 pub type Image<T> = Vec<Vec<T>>;
+
+pub const HD: bool = true;
+
+pub enum Effect {
+    NoEffect,
+    Blur,
+    ASCII,
+}
 
 pub struct Metadata {
     pub ihdr_chunk: ihdr::IHDRChunk,
@@ -59,17 +69,7 @@ pub fn from_bytes_u16(bytes: &[u8]) -> u16 {
     ((bytes[0] as u16) << 8) + (bytes[1] as u16)
 }
 
-const HD: bool = true;
-
-fn replace_with_bg(col: &RGBColor, bkgd: &RGBColor) -> RGBColor {
-    if is_transparent(col.0, col.1, col.2) {
-        *bkgd
-    } else {
-        *col
-    }
-}
-
-pub fn display_image(image: &Image<RGBColor>, bkgd: &RGBColor) {
+pub fn auto_downsize_image(image: Image<RGBColor>) -> io::Result<Image<RGBColor>> {
     // Terminal dimensions
     let (tw, th) = if let Some((w, h)) = term_size::dimensions() {
         if HD {
@@ -80,7 +80,10 @@ pub fn display_image(image: &Image<RGBColor>, bkgd: &RGBColor) {
             (w / 2, h)
         }
     } else {
-        return println!("Failed to get Terminal size");
+        return Err(io::Error::new(
+            io::ErrorKind::NotFound,
+            "Failed to get Terminal size",
+        ));
     };
 
     // Raw image dimensions
@@ -162,47 +165,5 @@ pub fn display_image(image: &Image<RGBColor>, bkgd: &RGBColor) {
         downsized_image.push(scanline);
     }
 
-    println!();
-
-    let is_bg_transparent = is_transparent(bkgd.0, bkgd.1, bkgd.2);
-
-    if HD {
-        // 4 times the number of pixels instead of using ██ as one block, use ▀▄ as 4 blocks
-        // Currently colours are messed up, due to bad downsizing algorithm
-        let mut y = 0;
-        while y < h {
-            for x in 0..w {
-                let (tr, tg, tb) = replace_with_bg(&downsized_image[y][x], bkgd);
-                let (br, bg, bb) = if y + 1 == h {
-                    (0, 0, 0)
-                } else {
-                    replace_with_bg(&downsized_image[y + 1][x], bkgd)
-                };
-
-                let s = if is_transparent(tr, tg, tb) && is_bg_transparent {
-                    " "
-                } else {
-                    "▀"
-                };
-
-                print!(
-                    "\x1B[38;2;{};{};{};48;2;{};{};{}m{}\x1B[0m",
-                    tr, tg, tb, br, bg, bb, s
-                );
-            }
-            println!();
-            y += 2;
-        }
-    } else {
-        let mut i = 0;
-        for scanline in downsized_image {
-            print!("{:02}: ", i);
-            for (r, g, b) in scanline {
-                let (r, g, b) = replace_with_bg(&(r, g, b), bkgd);
-                print!("\x1B[48;2;{};{};{}m  \x1B[0m", r, g, b);
-            }
-            println!();
-            i += 1;
-        }
-    }
+    Ok(downsized_image)
 }
