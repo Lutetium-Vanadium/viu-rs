@@ -3,6 +3,7 @@ use std::env;
 use std::fs::File;
 use std::io;
 use std::io::prelude::*;
+use std::io::{Error, ErrorKind};
 use std::str;
 
 mod chunks;
@@ -27,7 +28,10 @@ fn main() -> io::Result<()> {
 
     // PNG file signature
     if buffer[..8] != [137, 80, 78, 71, 13, 10, 26, 10] {
-        panic!("Invalid Image given. The image is either not a png or has been corrupted.");
+        return Err(Error::new(
+            ErrorKind::InvalidInput,
+            "Invalid file signature: The image is either not a png or has been corrupted.",
+        ));
     }
 
     let mut metadata = Metadata::new();
@@ -52,10 +56,13 @@ fn main() -> io::Result<()> {
         let crc = from_bytes_u32(&buffer[i..i + 4]);
         match crc_handler.verify(crc, &buffer[crc_chunk_start..i]) {
             Err(calc_crc) => {
-                panic!(
-                    "Invalid Chunk; CRC didnt match -> got: {}   calculated: {}",
-                    crc, calc_crc,
-                );
+                return Err(Error::new(
+                    ErrorKind::InvalidData,
+                    format!(
+                        "Invalid Chunk; CRC didnt match -> got: {}   calculated: {}",
+                        crc, calc_crc,
+                    ),
+                ));
             }
             _ => {}
         };
@@ -65,10 +72,13 @@ fn main() -> io::Result<()> {
         print!("\tCRC: {}", crc);
 
         if !parsed_first && chunk_type != chunk_types::IHDR {
-            panic!(
-                "First chunk needs to be IHDR, got: {}",
-                str::from_utf8(chunk_type).unwrap()
-            );
+            return Err(Error::new(
+                ErrorKind::InvalidData,
+                format!(
+                    "First chunk needs to be IHDR, got: {}",
+                    str::from_utf8(chunk_type).unwrap()
+                ),
+            ));
         } else {
             parsed_first = true;
         }
@@ -77,7 +87,7 @@ fn main() -> io::Result<()> {
         if chunk_type[0] & (1 << 5) == 0 {
             println!("\t\tIMP");
             if chunk_type == chunk_types::IHDR {
-                metadata.ihdr_chunk = ihdr::IHDRChunk::parse(chunk_data);
+                metadata.ihdr_chunk = ihdr::IHDRChunk::parse(chunk_data)?;
                 println!("DEBUG: {:0x?}", &buffer[crc_chunk_start..i]);
                 println!(
                     "Image size: {}x{}",
@@ -100,36 +110,54 @@ fn main() -> io::Result<()> {
             } else if chunk_type == chunk_types::IEND {
                 break;
             } else {
-                panic!(
-                    "Unknown chunk type: {}",
-                    str::from_utf8(chunk_type).unwrap()
-                )
+                return Err(Error::new(
+                    ErrorKind::Other,
+                    format!(
+                        "Unknown chunk type: {}",
+                        str::from_utf8(chunk_type).unwrap()
+                    ),
+                ));
             }
         } else {
             if chunk_type == chunk_types::tRNS {
-                let trns_chunk = ancillary::TRNSChunk::parse(chunk_data, &metadata);
-                metadata.set_alpha(trns_chunk);
+                match ancillary::TRNSChunk::parse(chunk_data, &metadata) {
+                    Ok(trns_chunk) => metadata.set_alpha(trns_chunk),
+                    Err(e) => eprintln!("{}", e),
+                }
             } else if chunk_type == chunk_types::tIME {
                 let time_chunk = ancillary::TIMEChunk::parse(chunk_data);
                 print!("\nLast Changed: {}", time_chunk);
             } else if chunk_type == chunk_types::tEXt {
-                let text_chunk =
-                    ancillary::TextChunk::parse(ancillary::TextChunk::split(chunk_data)).unwrap();
-                if text_chunk.key.len() > 0 {
-                    print!("\n{}: {}", text_chunk.key, text_chunk.text);
-                }
+                match ancillary::TextChunk::parse(ancillary::TextChunk::split(chunk_data)) {
+                    Ok(text_chunk) => {
+                        if text_chunk.key.len() > 0 {
+                            print!("\n{}: {}", text_chunk.key, text_chunk.text);
+                        }
+                    }
+                    Err(e) => eprintln!("{}", e),
+                };
             } else if chunk_type == chunk_types::zTXt {
                 let (keyword_chunk, text_chunk) = ancillary::TextChunk::split(chunk_data);
+                // Ideally errors should be just printed here, instead of programming ending
                 let mut decoder = Decoder::new(&text_chunk[..])?;
                 let mut text_chunk = Vec::new();
                 decoder.read_to_end(&mut text_chunk)?;
-                let _text_chunk =
-                    ancillary::TextChunk::parse((keyword_chunk, &text_chunk[..])).unwrap();
-            // if text_chunk.key.len() > 0 {
-            //     print!("\n{}: {}", text_chunk.key, text_chunk.text);
-            // }
+                match ancillary::TextChunk::parse((keyword_chunk, &text_chunk[..])) {
+                    Ok(text_chunk) => {
+                        if text_chunk.key.len() > 0 {
+                            print!("\n{}: {}", text_chunk.key, text_chunk.text);
+                        }
+                    }
+                    Err(e) => eprintln!("{}", e),
+                };
             } else if chunk_type == chunk_types::bKGD {
-                let bkgd = ancillary::parse_bkgd_chunk(chunk_data, &metadata);
+                let bkgd = match ancillary::parse_bkgd_chunk(chunk_data, &metadata) {
+                    Ok(bkgd) => bkgd,
+                    Err(e) => {
+                        eprintln!("{}", e);
+                        (0, 0, 0)
+                    }
+                };
                 print!("\nGot backround: {:?}", bkgd);
                 metadata.set_bkgd(bkgd);
             }
@@ -145,7 +173,7 @@ fn main() -> io::Result<()> {
 
     println!("got {} bytes of image data", image_data.len());
 
-    let image = parse_image::parse(image_data, &metadata);
+    let image = parse_image::parse(image_data, &metadata)?;
 
     assert_eq!(image[0].len() as u32, metadata.ihdr_chunk.width());
     assert_eq!(image.len() as u32, metadata.ihdr_chunk.height());

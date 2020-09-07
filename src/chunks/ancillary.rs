@@ -1,6 +1,7 @@
 use super::ihdr;
 use crate::common::*;
 use std::fmt;
+use std::io;
 
 // IMPORTANT NOTE as per the png 1.2 spec [http://www.libpng.org/pub/png/spec/1.2/png-1.2-pdg.html#C.Anc-chunks]:
 //      Note: when dealing with 16-bit grayscale or truecolor data, it is important to compare both bytes of the
@@ -19,16 +20,16 @@ pub enum TRNSChunk {
 }
 
 impl TRNSChunk {
-    pub fn parse(bytes: &[u8], metadata: &Metadata) -> TRNSChunk {
+    pub fn parse(bytes: &[u8], metadata: &Metadata) -> io::Result<TRNSChunk> {
         match metadata.ihdr_chunk.color_type() {
             ihdr::ColorType::Gray => {
                 let val = from_bytes_u16(bytes);
                 let bit_depth = metadata.ihdr_chunk.bit_depth();
-                TRNSChunk::Gray(if bit_depth == 16 {
+                Ok(TRNSChunk::Gray(if bit_depth == 16 {
                     (val / 256) as u8
                 } else {
                     (val as u8) * 8 / bit_depth
-                })
+                }))
             }
             ihdr::ColorType::RGB => {
                 let r = from_bytes_u16(bytes);
@@ -44,12 +45,17 @@ impl TRNSChunk {
                         (b as u8) * 8 / bit_depth,
                     )
                 };
-                TRNSChunk::RGB(r, g, b)
+                Ok(TRNSChunk::RGB(r, g, b))
             }
             ihdr::ColorType::Palette => {
                 let len = match metadata.palette() {
                     Some(pt) => pt.colors.len(),
-                    None => panic!("PLTE chunk must be present before tRNS"),
+                    None => {
+                        return Err(io::Error::new(
+                            io::ErrorKind::NotFound,
+                            "PLTE chunk must be present before tRNS",
+                        ))
+                    }
                 };
 
                 let mut alpha = Vec::with_capacity(len);
@@ -62,10 +68,15 @@ impl TRNSChunk {
                     alpha.push(255);
                 }
 
-                TRNSChunk::Palette(alpha)
+                Ok(TRNSChunk::Palette(alpha))
             }
             // RGBA and GrayA already have alpha channels and tRNS chunks are unsupported for them
-            color_type => panic!("tRNS chunk not allowed for color type: {:?}", color_type),
+            color_type => {
+                return Err(io::Error::new(
+                    io::ErrorKind::InvalidData,
+                    format!("tRNS chunk not allowed for color type: {:?}", color_type),
+                ))
+            }
         }
     }
 }
@@ -129,11 +140,11 @@ impl TextChunk {
     }
 }
 
-pub fn parse_bkgd_chunk(bytes: &[u8], metadata: &Metadata) -> RGBColor {
+pub fn parse_bkgd_chunk(bytes: &[u8], metadata: &Metadata) -> io::Result<RGBColor> {
     let (r, g, b) = match metadata.ihdr_chunk.color_type() {
         ihdr::ColorType::Palette => match metadata.palette() {
             Some(pt) => pt.colors[bytes[0] as usize],
-            None => panic!("Palette not found"),
+            None => return Err(io::Error::new(io::ErrorKind::NotFound, "Palette not found")),
         },
         ihdr::ColorType::Gray | ihdr::ColorType::GrayA => {
             let val = from_bytes_u16(bytes);
@@ -162,9 +173,9 @@ pub fn parse_bkgd_chunk(bytes: &[u8], metadata: &Metadata) -> RGBColor {
             (r, g, b)
         }
     };
-    if is_transparent(r, g, b) {
+    Ok(if is_transparent(r, g, b) {
         (0, 0, 1)
     } else {
         (r, g, b)
-    }
+    })
 }

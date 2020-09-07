@@ -1,4 +1,5 @@
 use crate::common::*;
+use std::io::{Error, ErrorKind, Result};
 
 #[derive(Debug)]
 pub enum ColorType {
@@ -40,7 +41,7 @@ impl std::default::Default for IHDRChunk {
 }
 
 impl IHDRChunk {
-    pub fn parse(bytes: &[u8]) -> IHDRChunk {
+    pub fn parse(bytes: &[u8]) -> Result<IHDRChunk> {
         let ihdr = IHDRChunk {
             width: from_bytes_u32(&bytes[0..4]),
             height: from_bytes_u32(&bytes[4..8]),
@@ -52,30 +53,34 @@ impl IHDRChunk {
         };
 
         // Check has a valid bit depth
+        if ![0, 2, 3, 4, 6].contains(&ihdr.color_type) {
+            return Err(Error::new(ErrorKind::InvalidData, "Malformed Color Type"));
+        }
+
         match ihdr.color_type() {
             ColorType::Gray => {
                 if ![1, 2, 4, 8, 16].contains(&ihdr.bit_depth) {
-                    panic!("Malformed Bit Depth");
+                    return Err(Error::new(ErrorKind::InvalidData, "Malformed Bit Depth"));
                 }
             }
             ColorType::RGB => {
                 if ![8, 16].contains(&ihdr.bit_depth) {
-                    panic!("Malformed Bit Depth");
+                    return Err(Error::new(ErrorKind::InvalidData, "Malformed Bit Depth"));
                 }
             }
             ColorType::Palette => {
                 if ![1, 2, 4, 8].contains(&ihdr.bit_depth) {
-                    panic!("Malformed Bit Depth");
+                    return Err(Error::new(ErrorKind::InvalidData, "Malformed Bit Depth"));
                 }
             }
             ColorType::GrayA => {
                 if ![8, 16].contains(&ihdr.bit_depth) {
-                    panic!("Malformed Bit Depth");
+                    return Err(Error::new(ErrorKind::InvalidData, "Malformed Bit Depth"));
                 }
             }
             ColorType::RGBA => {
                 if ![8, 16].contains(&ihdr.bit_depth) {
-                    panic!("Malformed Bit Depth");
+                    return Err(Error::new(ErrorKind::InvalidData, "Malformed Bit Depth"));
                 }
             }
         };
@@ -83,24 +88,36 @@ impl IHDRChunk {
         // At present, only compression method 0 (deflate/inflate compression with a
         // sliding window of at most 32768 bytes) is defined.
         if ihdr.compression_method != 0 {
-            panic!("Unknown compression_method: {}", ihdr.compression_method);
+            return Err(Error::new(
+                ErrorKind::Other,
+                format!("Unknown compression_method: {}", ihdr.compression_method),
+            ));
         }
 
         // At present, only filter method 0 (adaptive filtering with five basic filter types) is defined
         if ihdr.filter_method != 0 {
-            panic!("Unknown filter_method: {}", ihdr.filter_method);
+            return Err(Error::new(
+                ErrorKind::Other,
+                format!("Unknown compression_method: {}", ihdr.compression_method),
+            ));
         }
 
         // Two values are currently defined: 0 (no interlace) or 1 (Adam7 interlace)
         if ihdr.interlace_method >= 2 {
-            panic!("Unknown interlace_method: {}", ihdr.interlace_method);
+            return Err(Error::new(
+                ErrorKind::Other,
+                format!("Unknown compression_method: {}", ihdr.compression_method),
+            ));
         }
 
         if ihdr.interlace_method() == InterlaceMethod::Adam7 {
-            panic!("Interlacing not supported for now");
+            return Err(Error::new(
+                ErrorKind::Other,
+                "Interlacing is currently unsupported",
+            ));
         }
 
-        ihdr
+        Ok(ihdr)
     }
 
     pub fn width(&self) -> u32 {
@@ -111,6 +128,8 @@ impl IHDRChunk {
         self.height
     }
 
+    // panic used here as it provides a cleaner interface, and checks for valid color_type
+    // and interlace_method are already performed in IHDRChunk::new
     pub fn color_type(&self) -> ColorType {
         match self.color_type {
             0 => ColorType::Gray,
