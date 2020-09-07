@@ -1,6 +1,6 @@
 use libflate::zlib::Decoder;
 use std::env;
-use std::fs::File;
+use std::fs;
 use std::io;
 use std::io::prelude::*;
 use std::io::{Error, ErrorKind};
@@ -17,8 +17,13 @@ use common::*;
 fn main() -> io::Result<()> {
     let args: Vec<String> = env::args().collect();
     let file_name = &args[1];
-    let mut f = File::open(file_name)?;
-    let mut buffer = Vec::new();
+    let mut f = fs::File::open(file_name)?;
+
+    // Prevent Vector reallocation because size is too small
+    let mut buffer = {
+        let f_meta = fs::metadata(file_name)?;
+        Vec::with_capacity(f_meta.len() as usize)
+    };
 
     f.read_to_end(&mut buffer)?;
 
