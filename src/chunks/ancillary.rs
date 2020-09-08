@@ -32,17 +32,17 @@ impl TRNSChunk {
                 }))
             }
             ihdr::ColorType::RGB => {
-                let r = from_bytes_u16(bytes);
-                let g = from_bytes_u16(bytes);
-                let b = from_bytes_u16(bytes);
+                let r = from_bytes_u16(&bytes[..2]);
+                let g = from_bytes_u16(&bytes[2..4]);
+                let b = from_bytes_u16(&bytes[4..6]);
                 let bit_depth = metadata.ihdr_chunk.bit_depth();
                 let (r, g, b) = if bit_depth == 16 {
                     ((r / 256) as u8, (g / 256) as u8, (b / 256) as u8)
                 } else {
                     (
-                        (r as u8) * 8 / bit_depth,
-                        (g as u8) * 8 / bit_depth,
-                        (b as u8) * 8 / bit_depth,
+                        (r * 8 / bit_depth as u16) as u8,
+                        (g * 8 / bit_depth as u16) as u8,
+                        (b * 8 / bit_depth as u16) as u8,
                     )
                 };
                 Ok(TRNSChunk::RGB(r, g, b))
@@ -157,17 +157,18 @@ pub fn parse_bkgd_chunk(bytes: &[u8], metadata: &Metadata) -> io::Result<RGBColo
             (val, val, val)
         }
         ihdr::ColorType::RGBA | ihdr::ColorType::RGB => {
-            let r = from_bytes_u16(bytes);
-            let g = from_bytes_u16(bytes);
-            let b = from_bytes_u16(bytes);
+            let r = from_bytes_u16(&bytes[0..2]);
+            let g = from_bytes_u16(&bytes[2..4]);
+            let b = from_bytes_u16(&bytes[2..6]);
+            println!("{:02x?} -> {}, {}, {}", bytes, r, g, b);
             let bit_depth = metadata.ihdr_chunk.bit_depth();
             let (r, g, b) = if bit_depth == 16 {
                 ((r / 256) as u8, (g / 256) as u8, (b / 256) as u8)
             } else {
                 (
-                    (r as u8) * 8 / bit_depth,
-                    (g as u8) * 8 / bit_depth,
-                    (b as u8) * 8 / bit_depth,
+                    (r * 8 / bit_depth as u16) as u8,
+                    (g * 8 / bit_depth as u16) as u8,
+                    (b * 8 / bit_depth as u16) as u8,
                 )
             };
             (r, g, b)

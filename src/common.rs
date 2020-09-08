@@ -4,11 +4,9 @@ use std::io;
 pub type RGBColor = (u8, u8, u8);
 pub type Image<T> = Vec<Vec<T>>;
 
-pub const HD: bool = true;
-
 pub enum Effect {
     NoEffect,
-    Blur,
+    Blur(usize),
     ASCII,
 }
 
@@ -69,15 +67,19 @@ pub fn from_bytes_u16(bytes: &[u8]) -> u16 {
     ((bytes[0] as u16) << 8) + (bytes[1] as u16)
 }
 
-pub fn auto_downsize_image(image: Image<RGBColor>) -> io::Result<Image<RGBColor>> {
+pub fn auto_downsize_image(image: Image<RGBColor>, effect: &Effect) -> io::Result<Image<RGBColor>> {
     // Terminal dimensions
     let (tw, th) = if let Some((w, h)) = term_size::dimensions() {
-        if HD {
-            // Use fg + bg to make one character 2 pixels
-            (w, h * 2)
-        } else {
-            // 2 characters for one pixel, otherwise it looks squished
-            (w / 2, h)
+        match effect {
+            // Double characters for one square pixel
+            // Eg:
+            //      ::  <-- One pixel
+            //  not :
+            Effect::ASCII => (w / 2, h),
+            _ => {
+                // Use fg + bg to make one character 2 pixels
+                (w, h * 2)
+            }
         }
     } else {
         return Err(io::Error::new(
@@ -107,7 +109,11 @@ pub fn auto_downsize_image(image: Image<RGBColor>) -> io::Result<Image<RGBColor>
 
     println!("Print image height: {}x{} ratio: {}", w, h, r);
 
-    let rstep = r * 0.98;
+    if r == 1.0 {
+        return Ok(image);
+    }
+
+    let rstep = r * 0.999999;
     let ir2 = 1.0 / (r * r);
 
     let mut downsized_image: Image<RGBColor> = Vec::new();

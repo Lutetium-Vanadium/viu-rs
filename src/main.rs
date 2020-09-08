@@ -16,21 +16,73 @@ use chunks::*;
 use common::*;
 use display_image::display_image;
 
-const HELP_STR: &'static str = "Usage: viurs [<option>] image.png\n
+const HELP_STR: &'static str = "Usage: viurs [<option>] <image path>\n
 Available Options:
-    blur: (unimplemented)
-    ascii: (unimplemented)
-    show: Shows the image.
-    <no-option-given>: Shows the image.";
+    blur:
+        Apply a blur of given intensity to the image
+        Usage: viurs blur <intensity> <image path>
+    ascii:
+        Display a greyscale ascii version based
+        Usage: viurs ascii <image path>
+    show:
+        Shows the image.
+        Usage: viurs show <image path>
+    <no-option-given>:
+        Shows the image.
+        Usage: viurs <image path>
+
+Image supplied must be a png file.";
 
 fn run() -> io::Result<()> {
     let args: Vec<String> = env::args().collect();
 
+    if args.len() < 2 {
+        return Err(Error::new(
+            ErrorKind::NotFound,
+            format!("Invalid Arguments\n\n{}", HELP_STR),
+        ));
+    };
+
     let (file_name, effect) = match args[1].as_str() {
         "-h" | "--help" => return Ok(println!("{}", HELP_STR)),
-        "blur" => (&args[3], Effect::Blur),
-        "ascii" => (&args[2], Effect::ASCII),
-        "show" => (&args[2], Effect::NoEffect),
+        "blur" => {
+            if args.len() < 4 {
+                return Err(Error::new(
+                    ErrorKind::NotFound,
+                    format!("Invalid Arguments\n\n{}", HELP_STR),
+                ));
+            }
+            (
+                &args[3],
+                Effect::Blur(match args[2].parse::<usize>() {
+                    Ok(intensity) => intensity * 2 + 1,
+                    Err(_) => {
+                        return Err(Error::new(
+                            ErrorKind::InvalidData,
+                            "Blur size must be given",
+                        ))
+                    }
+                }),
+            )
+        }
+        "ascii" => {
+            if args.len() < 3 {
+                return Err(Error::new(
+                    ErrorKind::NotFound,
+                    format!("Invalid Arguments\n\n{}", HELP_STR),
+                ));
+            }
+            (&args[2], Effect::ASCII)
+        }
+        "show" => {
+            if args.len() < 3 {
+                return Err(Error::new(
+                    ErrorKind::NotFound,
+                    format!("Invalid Arguments\n\n{}", HELP_STR),
+                ));
+            }
+            (&args[2], Effect::NoEffect)
+        }
         _ => (&args[1], Effect::NoEffect),
     };
 
@@ -208,9 +260,9 @@ fn run() -> io::Result<()> {
     assert_eq!(image[0].len() as u32, metadata.ihdr_chunk.width());
     assert_eq!(image.len() as u32, metadata.ihdr_chunk.height());
 
-    let image = auto_downsize_image(image)?;
+    let image = auto_downsize_image(image, &effect)?;
 
-    display_image(&image, metadata.bkgd());
+    display_image(&image, metadata.bkgd(), effect);
 
     Ok(())
 }
