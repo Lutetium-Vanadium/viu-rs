@@ -22,8 +22,11 @@ Available Options:
         Apply a blur of given intensity to the image
         Usage: viurs blur <intensity> <image path>
     ascii:
-        Display a greyscale ascii version based
+        Display a grayscale ascii version
         Usage: viurs ascii <image path>
+    grayscale:
+        Display a grayscale version of the image
+        Usage: viurs grayscale <image path>
     show:
         Shows the image.
         Usage: viurs show <image path>
@@ -73,6 +76,15 @@ fn run() -> io::Result<()> {
                 ));
             }
             (&args[2], Effect::ASCII)
+        }
+        "grayscale" => {
+            if args.len() < 3 {
+                return Err(Error::new(
+                    ErrorKind::NotFound,
+                    format!("Invalid Arguments\n\n{}", HELP_STR),
+                ));
+            }
+            (&args[2], Effect::GrayScale)
         }
         "show" => {
             if args.len() < 3 {

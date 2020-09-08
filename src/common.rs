@@ -8,6 +8,7 @@ pub enum Effect {
     NoEffect,
     Blur(usize),
     ASCII,
+    GrayScale,
 }
 
 pub struct Metadata {

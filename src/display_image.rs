@@ -153,6 +153,59 @@ pub fn display_image(image: &Image<RGBColor>, bkgd: &RGBColor, effect: Effect) {
                 println!();
             }
         }
+        Effect::GrayScale => {
+            let w = image[0].len();
+            let h = image.len();
+
+            // use ▀▄ as 4 pixels
+            let mut y = 0;
+            while y < h {
+                for x in 0..w {
+                    let (tr, tg, tb) = {
+                        let (r, g, b) = replace_with_bg(&image[y][x], bkgd);
+                        if is_transparent(r, g, b) {
+                            (0, 0, 0)
+                        } else {
+                            let mut val = ((r as usize + g as usize + b as usize) / 3) as u8;
+                            if val == 0 {
+                                val = 1;
+                            }
+                            (val, val, val)
+                        }
+                    };
+                    let (br, bg, bb) = if y + 1 == h {
+                        (0, 0, 0)
+                    } else {
+                        let (r, g, b) = replace_with_bg(&image[y + 1][x], bkgd);
+                        if is_transparent(r, g, b) {
+                            (0, 0, 0)
+                        } else {
+                            let mut val = ((r as usize + g as usize + b as usize) / 3) as u8;
+                            if val == 0 {
+                                val = 1;
+                            }
+                            (val, val, val)
+                        }
+                    };
+
+                    let s = if is_transparent(tr, tg, tb) && is_bg_transparent {
+                        " "
+                    } else {
+                        "▀"
+                    };
+
+                    let tval = ((tr as usize + tg as usize + tb as usize) / 3) as u8;
+                    let bval = ((br as usize + bg as usize + bb as usize) / 3) as u8;
+
+                    print!(
+                        "\x1B[38;2;{};{};{};48;2;{};{};{}m{}\x1B[0m",
+                        tval, tval, tval, bval, bval, bval, s
+                    );
+                }
+                println!();
+                y += 2;
+            }
+        }
         Effect::NoEffect => {
             let w = image[0].len();
             let h = image.len();
