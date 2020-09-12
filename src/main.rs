@@ -13,7 +13,7 @@ mod png;
 
 use common::*;
 use display_image::display_image;
-use png::{chunks::*, Metadata};
+use png::chunks::*;
 
 const HELP_STR: &'static str = "Usage: viurs [<option>] <image path>\n
 Available Options:
@@ -172,26 +172,18 @@ fn run() -> io::Result<()> {
         if chunk_type[0] & (1 << 5) == 0 {
             println!("\t\tIMP");
             if chunk_type == chunk_types::IHDR {
-                metadata.ihdr_chunk = ihdr::IHDRChunk::parse(chunk_data)?;
+                metadata.add_ihdr(ihdr::IHDRChunk::parse(chunk_data)?);
 
-                println!(
-                    "Image size: {}x{}",
-                    metadata.ihdr_chunk.width(),
-                    metadata.ihdr_chunk.height()
-                );
-                println!("Image color type: {:?}", metadata.ihdr_chunk.color_type());
-                println!("Image pixel size: {}", metadata.ihdr_chunk.pixel_size());
-                println!(
-                    "Image interlace: {:?} ",
-                    metadata.ihdr_chunk.interlace_method()
-                )
+                println!("Image size: {}x{}", metadata.width(), metadata.height());
+                println!("Image color type: {:?}", metadata.color_type());
+                println!("Image pixel size: {}", metadata.pixel_size());
             } else if chunk_type == chunk_types::PLTE {
                 let plte_chunk = plte::PLTEChunk::parse(chunk_data, chunk_length);
 
                 println!("Palette length: {}", plte_chunk.length);
                 println!("Palette Colors: {:?}", plte_chunk.colors);
 
-                metadata.set_palette(plte_chunk);
+                metadata.set_palette(plte_chunk.colors);
             } else if chunk_type == chunk_types::IDAT {
                 zlib_stream.extend(chunk_data.iter());
             } else if chunk_type == chunk_types::IEND {
@@ -207,7 +199,7 @@ fn run() -> io::Result<()> {
             }
         } else {
             if chunk_type == chunk_types::tRNS {
-                match ancillary::TRNSChunk::parse(chunk_data, &metadata) {
+                match ancillary::parse_trns(chunk_data, &metadata) {
                     Ok(trns_chunk) => metadata.set_alpha(trns_chunk),
                     Err(e) => eprintln!("{}", e),
                 }
@@ -268,8 +260,8 @@ fn run() -> io::Result<()> {
 
     let image = png::parse_image(image_data, &metadata)?;
 
-    assert_eq!(image[0].len() as u32, metadata.ihdr_chunk.width());
-    assert_eq!(image.len() as u32, metadata.ihdr_chunk.height());
+    assert_eq!(image[0].len() as u32, metadata.width());
+    assert_eq!(image.len() as u32, metadata.height());
 
     let image = auto_downsize_image(image, &effect)?;
 

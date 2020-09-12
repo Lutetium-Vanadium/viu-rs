@@ -1,15 +1,6 @@
 use crate::common::*;
 use std::io::{Error, ErrorKind, Result};
 
-#[derive(Debug)]
-pub enum ColorType {
-    Gray,
-    RGB,
-    Palette,
-    GrayA,
-    RGBA,
-}
-
 #[derive(Debug, PartialEq, Eq)]
 pub enum InterlaceMethod {
     NoInterlace,

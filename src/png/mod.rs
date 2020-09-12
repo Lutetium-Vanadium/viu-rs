@@ -1,64 +1,22 @@
 pub mod chunks;
 
 use crate::common::*;
-use chunks::{ancillary, ihdr, plte};
+use chunks::ancillary;
 use std::io::{Error, ErrorKind, Result};
-
-pub struct Metadata {
-    pub ihdr_chunk: ihdr::IHDRChunk,
-    palette: Option<plte::PLTEChunk>,
-    alpha: Option<ancillary::TRNSChunk>,
-    bkgd: RGBColor,
-}
-
-impl Metadata {
-    pub fn new() -> Metadata {
-        Metadata {
-            alpha: None,
-            ihdr_chunk: Default::default(),
-            palette: None,
-            bkgd: (0, 0, 0), // Default background is transparent
-        }
-    }
-
-    pub fn palette(&self) -> &Option<plte::PLTEChunk> {
-        &self.palette
-    }
-
-    pub fn set_palette(&mut self, palette: plte::PLTEChunk) {
-        self.palette = Some(palette);
-    }
-
-    pub fn alpha(&self) -> &Option<ancillary::TRNSChunk> {
-        &self.alpha
-    }
-
-    pub fn set_alpha(&mut self, alpha: ancillary::TRNSChunk) {
-        self.alpha = Some(alpha);
-    }
-
-    pub fn bkgd(&self) -> &RGBColor {
-        &self.bkgd
-    }
-
-    pub fn set_bkgd(&mut self, bkgd: RGBColor) {
-        self.bkgd = bkgd;
-    }
-}
 
 pub fn parse_image(mut image_data: Vec<u8>, metadata: &Metadata) -> Result<Image<RGBColor>> {
     let mut image: Image<RGBColor> = Vec::new();
 
     // Make sure px_size isnt zero from truncation
-    let px_size = metadata.ihdr_chunk.pixel_size().max(1) as usize;
+    let px_size = metadata.pixel_size().max(1) as usize;
 
-    let scanline_length = metadata.ihdr_chunk.width() * px_size as u32 + 1;
+    let scanline_length = metadata.width() * px_size as u32 + 1;
 
-    for i in 0..metadata.ihdr_chunk.height() {
+    for i in 0..metadata.height() {
         let s = (i * scanline_length) as usize;
         let filter_method = image_data[s];
         let s = s + 1;
-        let e = s + (metadata.ihdr_chunk.width() as usize * px_size);
+        let e = s + (metadata.width() as usize * px_size);
         match filter_method {
             0 => {}
             1 => {
@@ -127,20 +85,14 @@ pub fn parse_image(mut image_data: Vec<u8>, metadata: &Metadata) -> Result<Image
 
         let mut i = 0;
         while i < image_data.len() {
-            match metadata.ihdr_chunk.color_type() {
-                ihdr::ColorType::Palette => {
+            match metadata.color_type() {
+                ColorType::Palette => {
                     palette(&image_data[i..i + px_size], metadata, &mut scanline)?
                 }
-                ihdr::ColorType::RGBA => {
-                    rgba(&image_data[i..i + px_size], metadata, &mut scanline)?
-                }
-                ihdr::ColorType::RGB => rgb(&image_data[i..i + px_size], metadata, &mut scanline)?,
-                ihdr::ColorType::Gray => {
-                    gray(&image_data[i..i + px_size], metadata, &mut scanline)?
-                }
-                ihdr::ColorType::GrayA => {
-                    gray_a(&image_data[i..i + px_size], metadata, &mut scanline)?
-                }
+                ColorType::RGBA => rgba(&image_data[i..i + px_size], metadata, &mut scanline)?,
+                ColorType::RGB => rgb(&image_data[i..i + px_size], metadata, &mut scanline)?,
+                ColorType::Gray => gray(&image_data[i..i + px_size], metadata, &mut scanline)?,
+                ColorType::GrayA => gray_a(&image_data[i..i + px_size], metadata, &mut scanline)?,
             };
             i += px_size;
         }
@@ -185,7 +137,7 @@ fn palette(image_data: &[u8], metadata: &Metadata, scanline: &mut Vec<RGBColor>)
 
     let alpha = match metadata.alpha() {
         Some(alpha) => match alpha {
-            ancillary::TRNSChunk::Palette(alpha) => Some(alpha),
+            AlphaValue::Palette(alpha) => Some(alpha),
             // Something has gone very wring, program must be aborted
             _ => panic!("tNRS has been wrongly parsed"),
         },
@@ -196,11 +148,11 @@ fn palette(image_data: &[u8], metadata: &Metadata, scanline: &mut Vec<RGBColor>)
     //      with rgb colour codes. This make sure that opaque black pizels will be put as black instead
     //      of transparent
     //      Blue is increased since its least receptive for the human eye
-    match metadata.ihdr_chunk.bit_depth() {
+    match metadata.bit_depth() {
         1 => {
             for i in 0..8 {
                 let i = (image_data[0] >> (7 - i) & 0b1) as usize;
-                let (r, g, mut b) = pt.colors[i];
+                let (r, g, mut b) = pt[i];
                 if is_transparent(r, g, b) {
                     b = 1;
                 }
@@ -213,7 +165,7 @@ fn palette(image_data: &[u8], metadata: &Metadata, scanline: &mut Vec<RGBColor>)
         2 => {
             for i in 0..4 {
                 let i = (image_data[0] >> (6 - i * 2) & 0b11) as usize;
-                let (r, g, mut b) = pt.colors[i];
+                let (r, g, mut b) = pt[i];
                 if is_transparent(r, g, b) {
                     b = 1;
                 }
@@ -226,7 +178,7 @@ fn palette(image_data: &[u8], metadata: &Metadata, scanline: &mut Vec<RGBColor>)
         4 => {
             for i in 0..2 {
                 let i = (image_data[0] >> (4 - i * 4) & 0b1111) as usize;
-                let (r, g, mut b) = pt.colors[i];
+                let (r, g, mut b) = pt[i];
                 if is_transparent(r, g, b) {
                     b = 1;
                 }
@@ -238,7 +190,7 @@ fn palette(image_data: &[u8], metadata: &Metadata, scanline: &mut Vec<RGBColor>)
         }
         8 => {
             let i = image_data[0] as usize;
-            let (r, g, mut b) = pt.colors[i];
+            let (r, g, mut b) = pt[i];
             if is_transparent(r, g, b) {
                 b = 1;
             }
@@ -253,7 +205,7 @@ fn palette(image_data: &[u8], metadata: &Metadata, scanline: &mut Vec<RGBColor>)
 }
 
 fn rgba(image_data: &[u8], metadata: &Metadata, scanline: &mut Vec<RGBColor>) -> Result<()> {
-    let (r, g, mut b, a) = match metadata.ihdr_chunk.bit_depth() {
+    let (r, g, mut b, a) = match metadata.bit_depth() {
         8 => (image_data[0], image_data[1], image_data[2], image_data[3]),
         16 => (
             (from_bytes_u16(&image_data[..2]) / 256) as u8,
@@ -277,7 +229,7 @@ fn rgba(image_data: &[u8], metadata: &Metadata, scanline: &mut Vec<RGBColor>) ->
 }
 
 fn rgb(image_data: &[u8], metadata: &Metadata, scanline: &mut Vec<RGBColor>) -> Result<()> {
-    let (r, g, mut b) = match metadata.ihdr_chunk.bit_depth() {
+    let (r, g, mut b) = match metadata.bit_depth() {
         8 => (image_data[0], image_data[1], image_data[2]),
         16 => (
             (from_bytes_u16(&image_data[..2]) / 256) as u8,
@@ -297,7 +249,7 @@ fn rgb(image_data: &[u8], metadata: &Metadata, scanline: &mut Vec<RGBColor>) -> 
 
     let is_transparent = match metadata.alpha() {
         Some(alpha) => match alpha {
-            ancillary::TRNSChunk::RGB(ar, ag, ab) => *ar == r && *ag == g && *ab == b,
+            AlphaValue::RGB(ar, ag, ab) => *ar == r && *ag == g && *ab == b,
             // Something has gone very wring, program must be aborted
             _ => panic!("tNRS has been wrongly parsed"),
         },
@@ -314,7 +266,7 @@ fn rgb(image_data: &[u8], metadata: &Metadata, scanline: &mut Vec<RGBColor>) -> 
 fn gray(image_data: &[u8], metadata: &Metadata, scanline: &mut Vec<RGBColor>) -> Result<()> {
     let alpha = match metadata.alpha() {
         Some(alpha) => match alpha {
-            ancillary::TRNSChunk::Gray(alpha) => Some(alpha),
+            AlphaValue::Gray(alpha) => Some(alpha),
             // Something has gone very wring, program must be aborted
             _ => panic!("tNRS has been wrongly parsed"),
         },
@@ -324,7 +276,7 @@ fn gray(image_data: &[u8], metadata: &Metadata, scanline: &mut Vec<RGBColor>) ->
     // for all val = 1: Ansi displays completely transparent if colour is set to (0, 0, 0) [at least for my terminal]
     //      with rgb colour codes. This make sure that opaque black pizels will be put as black instead
     //      of transparent
-    match metadata.ihdr_chunk.bit_depth() {
+    match metadata.bit_depth() {
         1 => {
             for i in 0..8 {
                 let mut val = (image_data[0] >> (7 - i) & 0b1) * 255;
@@ -412,7 +364,7 @@ fn gray(image_data: &[u8], metadata: &Metadata, scanline: &mut Vec<RGBColor>) ->
 }
 
 fn gray_a(image_data: &[u8], metadata: &Metadata, scanline: &mut Vec<RGBColor>) -> Result<()> {
-    let (mut val, alpha) = match metadata.ihdr_chunk.bit_depth() {
+    let (mut val, alpha) = match metadata.bit_depth() {
         8 => (image_data[0], image_data[1]),
         16 => (
             (from_bytes_u16(&image_data[2..4]) / 256) as u8,

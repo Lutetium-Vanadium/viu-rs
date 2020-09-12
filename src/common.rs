@@ -1,3 +1,4 @@
+use crate::png::chunks::ihdr;
 use std::io;
 
 pub type RGBColor = (u8, u8, u8);
@@ -8,6 +9,113 @@ pub enum Effect {
     Blur(usize),
     ASCII,
     GrayScale,
+}
+
+#[derive(Debug)]
+pub enum ColorType {
+    Gray,
+    RGB,
+    Palette,
+    GrayA,
+    RGBA,
+}
+
+// IMPORTANT NOTE as per the png 1.2 spec [http://www.libpng.org/pub/png/spec/1.2/png-1.2-pdg.html#C.Anc-chunks]:
+//      Note: when dealing with 16-bit grayscale or truecolor data, it is important to compare both bytes of the
+//      sample values to determine whether a pixel is transparent. Although decoders may drop the low-order byte
+//      of the samples for display, this must not occur until after the data has been tested for transparency.
+//      For example, if the grayscale level 0x0001 is specified to be transparent, it would be incorrect to
+//      compare only the high-order byte and decide that 0x0002 is also transparent.
+//
+// This is being ignored for simplicity, and all values are being scaled to a u8. This means for 16 bit colour depth,
+// multiple values expected to be distinct will be all treated as transparent.
+#[derive(Debug)]
+pub enum AlphaValue {
+    RGB(u8, u8, u8),
+    Gray(u8),
+    Palette(Vec<u8>),
+}
+
+pub struct Metadata {
+    width: u32,
+    height: u32,
+    bit_depth: u8,
+    color_type: ColorType,
+    palette: Option<Vec<RGBColor>>,
+    alpha: Option<AlphaValue>,
+    bkgd: RGBColor,
+}
+
+impl Metadata {
+    pub fn new() -> Metadata {
+        Metadata {
+            alpha: None,
+            palette: None,
+            bkgd: (0, 0, 0), // Default background is transparent
+            width: 0,
+            height: 0,
+            bit_depth: 0,
+            color_type: ColorType::RGB,
+        }
+    }
+
+    pub fn add_ihdr(&mut self, ihdr_chunk: ihdr::IHDRChunk) {
+        self.width = ihdr_chunk.width();
+        self.height = ihdr_chunk.height();
+        self.bit_depth = ihdr_chunk.bit_depth();
+        self.color_type = ihdr_chunk.color_type();
+    }
+
+    pub fn width(&self) -> u32 {
+        self.width
+    }
+
+    pub fn height(&self) -> u32 {
+        self.height
+    }
+
+    pub fn color_type(&self) -> &ColorType {
+        &self.color_type
+    }
+
+    pub fn bit_depth(&self) -> u8 {
+        self.bit_depth
+    }
+
+    pub fn pixel_size(&self) -> u8 {
+        ((self.bit_depth / 8) as f32
+            * (match self.color_type() {
+                ColorType::Gray | ColorType::Palette => 1f32,
+                ColorType::GrayA => 2f32,
+                ColorType::RGB => 3f32,
+                ColorType::RGBA => 4f32,
+            }))
+        .ceil() as u8
+    }
+
+    pub fn palette(&self) -> &Option<Vec<RGBColor>> {
+        &self.palette
+    }
+
+    pub fn set_palette(&mut self, palette: Vec<RGBColor>) {
+        self.palette = Some(palette);
+    }
+
+    pub fn alpha(&self) -> &Option<AlphaValue> {
+        &self.alpha
+    }
+
+    pub fn set_alpha(&mut self, alpha: AlphaValue) {
+        self.alpha = Some(alpha);
+    }
+
+    pub fn bkgd(&self) -> &RGBColor {
+        &self.bkgd
+    }
+
+    pub fn set_bkgd(&mut self, bkgd: RGBColor) {
+        self.bkgd = bkgd;
+    }
 }
 
 pub fn is_transparent(r: u8, g: u8, b: u8) -> bool {
