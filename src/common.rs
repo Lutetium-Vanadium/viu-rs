@@ -1,4 +1,3 @@
-use crate::chunks::{ancillary, ihdr, plte};
 use std::io;
 
 pub type RGBColor = (u8, u8, u8);
@@ -9,48 +8,6 @@ pub enum Effect {
     Blur(usize),
     ASCII,
     GrayScale,
-}
-
-pub struct Metadata {
-    pub ihdr_chunk: ihdr::IHDRChunk,
-    palette: Option<plte::PLTEChunk>,
-    alpha: Option<ancillary::TRNSChunk>,
-    bkgd: RGBColor,
-}
-
-impl Metadata {
-    pub fn new() -> Metadata {
-        Metadata {
-            alpha: None,
-            ihdr_chunk: Default::default(),
-            palette: None,
-            bkgd: (0, 0, 0), // Default background is transparent
-        }
-    }
-
-    pub fn palette(&self) -> &Option<plte::PLTEChunk> {
-        &self.palette
-    }
-
-    pub fn set_palette(&mut self, palette: plte::PLTEChunk) {
-        self.palette = Some(palette);
-    }
-
-    pub fn alpha(&self) -> &Option<ancillary::TRNSChunk> {
-        &self.alpha
-    }
-
-    pub fn set_alpha(&mut self, alpha: ancillary::TRNSChunk) {
-        self.alpha = Some(alpha);
-    }
-
-    pub fn bkgd(&self) -> &RGBColor {
-        &self.bkgd
-    }
-
-    pub fn set_bkgd(&mut self, bkgd: RGBColor) {
-        self.bkgd = bkgd;
-    }
 }
 
 pub fn is_transparent(r: u8, g: u8, b: u8) -> bool {
@@ -114,7 +71,7 @@ pub fn auto_downsize_image(image: Image<RGBColor>, effect: &Effect) -> io::Resul
         return Ok(image);
     }
 
-    let rstep = r * 0.999999;
+    let rstep = r * 0.98;
     let ir2 = 1.0 / (r * r);
 
     let mut downsized_image: Image<RGBColor> = Vec::new();

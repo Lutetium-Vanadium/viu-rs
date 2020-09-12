@@ -1,8 +1,52 @@
-use crate::chunks::{ancillary, ihdr};
+pub mod chunks;
+
 use crate::common::*;
+use chunks::{ancillary, ihdr, plte};
 use std::io::{Error, ErrorKind, Result};
 
-pub fn parse(mut image_data: Vec<u8>, metadata: &Metadata) -> Result<Image<RGBColor>> {
+pub struct Metadata {
+    pub ihdr_chunk: ihdr::IHDRChunk,
+    palette: Option<plte::PLTEChunk>,
+    alpha: Option<ancillary::TRNSChunk>,
+    bkgd: RGBColor,
+}
+
+impl Metadata {
+    pub fn new() -> Metadata {
+        Metadata {
+            alpha: None,
+            ihdr_chunk: Default::default(),
+            palette: None,
+            bkgd: (0, 0, 0), // Default background is transparent
+        }
+    }
+
+    pub fn palette(&self) -> &Option<plte::PLTEChunk> {
+        &self.palette
+    }
+
+    pub fn set_palette(&mut self, palette: plte::PLTEChunk) {
+        self.palette = Some(palette);
+    }
+
+    pub fn alpha(&self) -> &Option<ancillary::TRNSChunk> {
+        &self.alpha
+    }
+
+    pub fn set_alpha(&mut self, alpha: ancillary::TRNSChunk) {
+        self.alpha = Some(alpha);
+    }
+
+    pub fn bkgd(&self) -> &RGBColor {
+        &self.bkgd
+    }
+
+    pub fn set_bkgd(&mut self, bkgd: RGBColor) {
+        self.bkgd = bkgd;
+    }
+}
+
+pub fn parse_image(mut image_data: Vec<u8>, metadata: &Metadata) -> Result<Image<RGBColor>> {
     let mut image: Image<RGBColor> = Vec::new();
 
     // Make sure px_size isnt zero from truncation

@@ -1,5 +1,6 @@
 use super::ihdr;
 use crate::common::*;
+use crate::png::Metadata;
 use std::fmt;
 use std::io;
 
@@ -160,7 +161,7 @@ pub fn parse_bkgd_chunk(bytes: &[u8], metadata: &Metadata) -> io::Result<RGBColo
             let r = from_bytes_u16(&bytes[0..2]);
             let g = from_bytes_u16(&bytes[2..4]);
             let b = from_bytes_u16(&bytes[2..6]);
-            println!("{:02x?} -> {}, {}, {}", bytes, r, g, b);
+
             let bit_depth = metadata.ihdr_chunk.bit_depth();
             let (r, g, b) = if bit_depth == 16 {
                 ((r / 256) as u8, (g / 256) as u8, (b / 256) as u8)

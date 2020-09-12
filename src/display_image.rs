@@ -1,4 +1,4 @@
-use super::common::*;
+use crate::common::*;
 
 // General purpose
 fn replace_with_bg(col: &RGBColor, bkgd: &RGBColor) -> RGBColor {

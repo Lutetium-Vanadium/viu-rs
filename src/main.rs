@@ -6,15 +6,14 @@ use std::io::prelude::*;
 use std::io::{Error, ErrorKind};
 use std::str;
 
-mod chunks;
 mod common;
 mod crc;
 mod display_image;
-mod parse_image;
+mod png;
 
-use chunks::*;
 use common::*;
 use display_image::display_image;
+use png::{chunks::*, Metadata};
 
 const HELP_STR: &'static str = "Usage: viurs [<option>] <image path>\n
 Available Options:
@@ -267,7 +266,7 @@ fn run() -> io::Result<()> {
 
     println!("got {} bytes of image data", image_data.len());
 
-    let image = parse_image::parse(image_data, &metadata)?;
+    let image = png::parse_image(image_data, &metadata)?;
 
     assert_eq!(image[0].len() as u32, metadata.ihdr_chunk.width());
     assert_eq!(image.len() as u32, metadata.ihdr_chunk.height());
