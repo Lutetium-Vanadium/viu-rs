@@ -1,385 +1,155 @@
 pub mod chunks;
+mod parse_image;
 
 use crate::common::*;
-use chunks::ancillary;
+use crate::crc::CRCHandler;
+use chunks::*;
+use libflate::zlib::Decoder;
+use parse_image::parse_image;
+use std::io;
+use std::io::prelude::*;
 use std::io::{Error, ErrorKind, Result};
+use std::str;
 
-pub fn parse_image(mut image_data: Vec<u8>, metadata: &Metadata) -> Result<Image<RGBColor>> {
-    let mut image: Image<RGBColor> = Vec::new();
+pub fn parse(buffer: Vec<u8>, metadata: &mut Metadata) -> io::Result<Image<RGBColor>> {
+    let mut i = 8;
+    let crc_handler = CRCHandler::new();
 
-    // Make sure px_size isnt zero from truncation
-    let px_size = metadata.pixel_size().max(1) as usize;
+    let mut parsed_first = false;
+    let mut zlib_stream: Vec<u8> = Vec::new();
 
-    let scanline_length = metadata.width() * px_size as u32 + 1;
-
-    for i in 0..metadata.height() {
-        let s = (i * scanline_length) as usize;
-        let filter_method = image_data[s];
-        let s = s + 1;
-        let e = s + (metadata.width() as usize * px_size);
-        match filter_method {
-            0 => {}
-            1 => {
-                for x in s..e {
-                    image_data[x] = image_data[x].wrapping_add(if x - s >= px_size {
-                        image_data[x - px_size]
-                    } else {
-                        0
-                    });
-                }
+    loop {
+        let chunk_length = from_bytes_u32(&buffer[i..i + 4]) as usize;
+        i += 4;
+        let crc_chunk_start = i;
+        let chunk_type = &buffer[i..i + 4];
+        i += 4;
+        print!(
+            "Found Chunk with size: {}.\tChunk Type: {}",
+            chunk_length,
+            str::from_utf8(chunk_type).unwrap()
+        );
+        let chunk_data = &buffer[i..i + chunk_length];
+        i += chunk_length;
+        let crc = from_bytes_u32(&buffer[i..i + 4]);
+        match crc_handler.verify(crc, &buffer[crc_chunk_start..i]) {
+            Err(calc_crc) => {
+                return Err(Error::new(
+                    ErrorKind::InvalidData,
+                    format!(
+                        "Invalid Chunk; CRC didnt match -> got: {}   calculated: {}",
+                        crc, calc_crc,
+                    ),
+                ));
             }
-            2 => {
-                for x in s..e {
-                    image_data[x] = image_data[x].wrapping_add(if i > 0 {
-                        image_data[x - scanline_length as usize]
-                    } else {
-                        0
-                    });
-                }
-            }
-            3 => {
-                for x in s..e {
-                    let top = if i > 0 {
-                        image_data[x - scanline_length as usize]
-                    } else {
-                        0
-                    } as u16;
-                    let left = if x - s >= px_size {
-                        image_data[x - px_size]
-                    } else {
-                        0
-                    } as u16;
-
-                    image_data[x] = image_data[x].wrapping_add(((top + left) / 2) as u8);
-                }
-            }
-            4 => {
-                for x in s..e {
-                    let top = if i > 0 {
-                        image_data[x - scanline_length as usize]
-                    } else {
-                        0
-                    } as i32;
-
-                    let left = if x - s >= px_size {
-                        image_data[x - px_size]
-                    } else {
-                        0
-                    } as i32;
-
-                    let topleft = if x - s >= px_size && i > 0 {
-                        image_data[x - px_size - scanline_length as usize]
-                    } else {
-                        0
-                    } as i32;
-
-                    image_data[x] = image_data[x].wrapping_add(paeth_predictor(left, top, topleft));
-                }
-            }
-            _ => return Err(Error::new(ErrorKind::Other, "Unrecognised filter method")),
+            _ => {}
         };
-        let image_data = &image_data[s..e];
-        let mut scanline = Vec::new();
+        // i incremented after crc check because crc bytes shouldnt be included in the crc check
+        i += 4;
 
-        assert_eq!(image_data.len() % px_size, 0);
+        print!("\tCRC: {}", crc);
 
-        let mut i = 0;
-        while i < image_data.len() {
-            match metadata.color_type() {
-                ColorType::Palette => {
-                    palette(&image_data[i..i + px_size], metadata, &mut scanline)?
-                }
-                ColorType::RGBA => rgba(&image_data[i..i + px_size], metadata, &mut scanline)?,
-                ColorType::RGB => rgb(&image_data[i..i + px_size], metadata, &mut scanline)?,
-                ColorType::Gray => gray(&image_data[i..i + px_size], metadata, &mut scanline)?,
-                ColorType::GrayA => gray_a(&image_data[i..i + px_size], metadata, &mut scanline)?,
-            };
-            i += px_size;
+        if !parsed_first && chunk_type != chunk_types::IHDR {
+            return Err(Error::new(
+                ErrorKind::InvalidData,
+                format!(
+                    "First chunk needs to be IHDR, got: {}",
+                    str::from_utf8(chunk_type).unwrap()
+                ),
+            ));
+        } else {
+            parsed_first = true;
         }
 
-        image.push(scanline);
-    }
+        // Is Upper case => Important, cannot be ignored
+        if chunk_type[0] & (1 << 5) == 0 {
+            println!("\t\tIMP");
+            if chunk_type == chunk_types::IHDR {
+                metadata.add_ihdr(ihdr::IHDRChunk::parse(chunk_data)?);
 
-    Ok(image)
-}
+                println!("Image size: {}x{}", metadata.width(), metadata.height());
+                println!("Image color type: {:?}", metadata.color_type());
+                println!("Image pixel size: {}", metadata.pixel_size());
+            } else if chunk_type == chunk_types::PLTE {
+                let plte_chunk = plte::PLTEChunk::parse(chunk_data, chunk_length);
 
-fn paeth_predictor(a: i32, b: i32, c: i32) -> u8 {
-    let p = a + b - c; // initial estimate
-    let pa = (p - a).abs(); // distances to a, b, c
-    let pb = (p - b).abs();
-    let pc = (p - c).abs();
+                println!("Palette length: {}", plte_chunk.length);
+                println!("Palette Colors: {:?}", plte_chunk.colors);
 
-    // return nearest of a,b,c,
-    // breaking ties in order a,b,c.
-    if pa <= pb && pa <= pc {
-        a as u8
-    } else if pb <= pc {
-        b as u8
-    } else {
-        c as u8
-    }
-}
-
-fn apply_alpha(r: u8, g: u8, b: u8, a: u8) -> RGBColor {
-    let opacity = (a as f32) / 256.0;
-    (
-        (r as f32 * opacity) as u8,
-        (g as f32 * opacity) as u8,
-        (b as f32 * opacity) as u8,
-    )
-}
-
-fn palette(image_data: &[u8], metadata: &Metadata, scanline: &mut Vec<RGBColor>) -> Result<()> {
-    let pt = match metadata.palette() {
-        Some(pt) => pt,
-        None => return Err(Error::new(ErrorKind::NotFound, "Palette not found")),
-    };
-
-    let alpha = match metadata.alpha() {
-        Some(alpha) => match alpha {
-            AlphaValue::Palette(alpha) => Some(alpha),
-            // Something has gone very wring, program must be aborted
-            _ => panic!("tNRS has been wrongly parsed"),
-        },
-        None => None,
-    };
-
-    // for all color.2 = 1: Ansi displays completely transparent if colour is set to (0, 0, 0) [at least for my terminal]
-    //      with rgb colour codes. This make sure that opaque black pizels will be put as black instead
-    //      of transparent
-    //      Blue is increased since its least receptive for the human eye
-    match metadata.bit_depth() {
-        1 => {
-            for i in 0..8 {
-                let i = (image_data[0] >> (7 - i) & 0b1) as usize;
-                let (r, g, mut b) = pt[i];
-                if is_transparent(r, g, b) {
-                    b = 1;
-                }
-                match alpha {
-                    Some(alpha) => scanline.push(apply_alpha(r, g, b, alpha[i])),
-                    None => scanline.push((r, g, b)),
-                }
-            }
-        }
-        2 => {
-            for i in 0..4 {
-                let i = (image_data[0] >> (6 - i * 2) & 0b11) as usize;
-                let (r, g, mut b) = pt[i];
-                if is_transparent(r, g, b) {
-                    b = 1;
-                }
-                match alpha {
-                    Some(alpha) => scanline.push(apply_alpha(r, g, b, alpha[i])),
-                    None => scanline.push((r, g, b)),
-                }
-            }
-        }
-        4 => {
-            for i in 0..2 {
-                let i = (image_data[0] >> (4 - i * 4) & 0b1111) as usize;
-                let (r, g, mut b) = pt[i];
-                if is_transparent(r, g, b) {
-                    b = 1;
-                }
-                match alpha {
-                    Some(alpha) => scanline.push(apply_alpha(r, g, b, alpha[i])),
-                    None => scanline.push((r, g, b)),
-                }
-            }
-        }
-        8 => {
-            let i = image_data[0] as usize;
-            let (r, g, mut b) = pt[i];
-            if is_transparent(r, g, b) {
-                b = 1;
-            }
-            match alpha {
-                Some(alpha) => scanline.push(apply_alpha(r, g, b, alpha[i])),
-                None => scanline.push((r, g, b)),
-            }
-        }
-        _ => return Err(Error::new(ErrorKind::InvalidData, "invalid bit depth")),
-    };
-    Ok(())
-}
-
-fn rgba(image_data: &[u8], metadata: &Metadata, scanline: &mut Vec<RGBColor>) -> Result<()> {
-    let (r, g, mut b, a) = match metadata.bit_depth() {
-        8 => (image_data[0], image_data[1], image_data[2], image_data[3]),
-        16 => (
-            (from_bytes_u16(&image_data[..2]) / 256) as u8,
-            (from_bytes_u16(&image_data[2..4]) / 256) as u8,
-            (from_bytes_u16(&image_data[4..6]) / 256) as u8,
-            (from_bytes_u16(&image_data[6..8]) / 256) as u8,
-        ),
-        _ => return Err(Error::new(ErrorKind::InvalidData, "invalid bit depth")),
-    };
-
-    // Ansi displays completely transparent if colour is set to (0, 0, 0) [at least for my terminal]
-    // with rgb colour codes. This make sure that opaque black pizels will be put as black instead
-    // of transparent, but if opacity is 0, a transparent pixel will be shown
-    // Blue is increased since its least receptive for the human eye
-    if is_transparent(r, g, b) {
-        b = 1;
-    }
-
-    scanline.push(apply_alpha(r, g, b, a));
-    Ok(())
-}
-
-fn rgb(image_data: &[u8], metadata: &Metadata, scanline: &mut Vec<RGBColor>) -> Result<()> {
-    let (r, g, mut b) = match metadata.bit_depth() {
-        8 => (image_data[0], image_data[1], image_data[2]),
-        16 => (
-            (from_bytes_u16(&image_data[..2]) / 256) as u8,
-            (from_bytes_u16(&image_data[2..4]) / 256) as u8,
-            (from_bytes_u16(&image_data[4..6]) / 256) as u8,
-        ),
-        _ => return Err(Error::new(ErrorKind::InvalidData, "invalid bit depth")),
-    };
-
-    // Ansi displays completely transparent if colour is set to (0, 0, 0) [at least for my terminal]
-    // with rgb colour codes. This make sure that opaque black pizels will be put as black instead
-    // of transparent
-    // Blue is increased since its least receptive for the human eye
-    if is_transparent(r, g, b) {
-        b = 1;
-    }
-
-    let is_transparent = match metadata.alpha() {
-        Some(alpha) => match alpha {
-            AlphaValue::RGB(ar, ag, ab) => *ar == r && *ag == g && *ab == b,
-            // Something has gone very wring, program must be aborted
-            _ => panic!("tNRS has been wrongly parsed"),
-        },
-        None => false,
-    };
-    if is_transparent {
-        scanline.push((0, 0, 0));
-    } else {
-        scanline.push((r, g, b));
-    };
-    Ok(())
-}
-
-fn gray(image_data: &[u8], metadata: &Metadata, scanline: &mut Vec<RGBColor>) -> Result<()> {
-    let alpha = match metadata.alpha() {
-        Some(alpha) => match alpha {
-            AlphaValue::Gray(alpha) => Some(alpha),
-            // Something has gone very wring, program must be aborted
-            _ => panic!("tNRS has been wrongly parsed"),
-        },
-        None => None,
-    };
-
-    // for all val = 1: Ansi displays completely transparent if colour is set to (0, 0, 0) [at least for my terminal]
-    //      with rgb colour codes. This make sure that opaque black pizels will be put as black instead
-    //      of transparent
-    match metadata.bit_depth() {
-        1 => {
-            for i in 0..8 {
-                let mut val = (image_data[0] >> (7 - i) & 0b1) * 255;
-                let is_transparent = match alpha {
-                    Some(alpha) => val == *alpha,
-                    None => false,
-                };
-                if val == 0 {
-                    val = 1;
-                }
-                if is_transparent {
-                    scanline.push((0, 0, 0));
-                } else {
-                    scanline.push((val, val, val));
-                }
-            }
-        }
-        2 => {
-            for i in 0..4 {
-                let mut val = (image_data[0] >> (6 - i * 2) & 0b11) * 85;
-                let is_transparent = match alpha {
-                    Some(alpha) => val == *alpha,
-                    None => false,
-                };
-                if val == 0 {
-                    val = 1;
-                }
-                if is_transparent {
-                    scanline.push((0, 0, 0));
-                } else {
-                    scanline.push((val, val, val));
-                }
-            }
-        }
-        4 => {
-            for i in 0..2 {
-                let mut val = (image_data[0] >> (4 - i * 4) & 0b1111) * 17;
-                let is_transparent = match alpha {
-                    Some(alpha) => val == *alpha,
-                    None => false,
-                };
-                if val == 0 {
-                    val = 1;
-                }
-                if is_transparent {
-                    scanline.push((0, 0, 0));
-                } else {
-                    scanline.push((val, val, val));
-                }
-            }
-        }
-        8 => {
-            let mut val = image_data[0];
-            let is_transparent = match alpha {
-                Some(alpha) => val == *alpha,
-                None => false,
-            };
-            if val == 0 {
-                val = 1;
-            }
-            if is_transparent {
-                scanline.push((0, 0, 0));
+                metadata.set_palette(plte_chunk.colors);
+            } else if chunk_type == chunk_types::IDAT {
+                zlib_stream.extend(chunk_data.iter());
+            } else if chunk_type == chunk_types::IEND {
+                break;
             } else {
-                scanline.push((val, val, val));
+                return Err(Error::new(
+                    ErrorKind::Other,
+                    format!(
+                        "Unknown chunk type: {}",
+                        str::from_utf8(chunk_type).unwrap()
+                    ),
+                ));
             }
-        }
-        16 => {
-            let mut val = (from_bytes_u16(image_data) / 256) as u8;
-            let is_transparent = match alpha {
-                Some(alpha) => val == *alpha,
-                None => false,
-            };
-            if val == 0 {
-                val = 1;
-            }
-            if is_transparent {
-                scanline.push((0, 0, 0));
-            } else {
-                scanline.push((val, val, val));
-            }
-        }
-        _ => return Err(Error::new(ErrorKind::InvalidData, "invalid bit depth")),
-    };
-    Ok(())
-}
+        } else {
+            if chunk_type == chunk_types::tRNS {
+                match ancillary::parse_trns(chunk_data, &metadata) {
+                    Ok(trns_chunk) => metadata.set_alpha(trns_chunk),
+                    Err(e) => eprintln!("{}", e),
+                }
+            } else if chunk_type == chunk_types::tIME {
+                let time_chunk = ancillary::TIMEChunk::parse(chunk_data);
 
-fn gray_a(image_data: &[u8], metadata: &Metadata, scanline: &mut Vec<RGBColor>) -> Result<()> {
-    let (mut val, alpha) = match metadata.bit_depth() {
-        8 => (image_data[0], image_data[1]),
-        16 => (
-            (from_bytes_u16(&image_data[2..4]) / 256) as u8,
-            (from_bytes_u16(&image_data[..2]) / 256) as u8,
-        ),
-        _ => return Err(Error::new(ErrorKind::InvalidData, "invalid bit depth")),
-    };
+                print!("\nLast Changed: {}", time_chunk);
+            } else if chunk_type == chunk_types::tEXt {
+                match ancillary::TextChunk::parse(ancillary::TextChunk::split(chunk_data)) {
+                    Ok(text_chunk) => {
+                        if text_chunk.key.len() > 0 {
+                            print!("\n{}: {}", text_chunk.key, text_chunk.text);
+                        }
+                    }
+                    Err(e) => eprintln!("{}", e),
+                };
+            } else if chunk_type == chunk_types::zTXt {
+                let (keyword_chunk, text_chunk) = ancillary::TextChunk::split(chunk_data);
 
-    // Ansi displays completely transparent if colour is set to (0, 0, 0) [at least for my terminal]
-    // with rgb colour codes. This make sure that opaque black pizels will be put as black instead
-    // of transparent, but if opacity is 0, a transparent pixel will be shown
-    if val == 0 {
-        val = 1;
+                // Ideally errors should be just printed here, instead of programme ending
+                let mut decoder = Decoder::new(&text_chunk[..])?;
+                let mut text_chunk = Vec::new();
+                decoder.read_to_end(&mut text_chunk)?;
+
+                match ancillary::TextChunk::parse((keyword_chunk, &text_chunk[..])) {
+                    Ok(text_chunk) => {
+                        if text_chunk.key.len() > 0 {
+                            print!("\n{}: {}", text_chunk.key, text_chunk.text);
+                        }
+                    }
+                    Err(e) => eprintln!("{}", e),
+                };
+            } else if chunk_type == chunk_types::bKGD {
+                let bkgd = match ancillary::parse_bkgd_chunk(chunk_data, &metadata) {
+                    Ok(bkgd) => bkgd,
+                    Err(e) => {
+                        eprintln!("{}", e);
+                        (0, 0, 0)
+                    }
+                };
+
+                print!("\nGot backround: {:?}", bkgd);
+
+                metadata.set_bkgd(bkgd);
+            }
+
+            println!("");
+        }
     }
 
-    scanline.push(apply_alpha(val, val, val, alpha));
-    Ok(())
+    println!("got {} bytes of zlib data", zlib_stream.len());
+
+    let mut decoder = Decoder::new(&zlib_stream[..])?;
+    let mut image_data = Vec::new();
+    decoder.read_to_end(&mut image_data)?;
+
+    println!("got {} bytes of image data", image_data.len());
+
+    Ok(parse_image(image_data, &metadata)?)
 }
